@@ -1,9 +1,9 @@
 services:
-  backend:
-    image: cheinisch/ownpass-backend:latest
+  app:
+    image: cheinisch/ownpass:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8080:8080"
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -14,14 +14,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-
-  frontend:
-    image: cheinisch/ownpass-frontend:latest
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
 
   db:
     image: postgres:16-alpine
