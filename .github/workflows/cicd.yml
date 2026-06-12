@@ -1,0 +1,41 @@
+name: CI/CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (optional, z.B. 1.0.0) – leer lassen für :latest only'
+        required: false
+        type: string
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            cheinisch/ownpass-backend:latest
+            ${{ inputs.version != '' && format('cheinisch/ownpass-backend:{0}', inputs.version) || '' }}
+
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            cheinisch/ownpass-frontend:latest
+            ${{ inputs.version != '' && format('cheinisch/ownpass-frontend:{0}', inputs.version) || '' }}
