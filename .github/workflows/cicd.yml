@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (optional, z.B. 1.0.0) – leer lassen für :latest only'
+        description: 'Version (optional, z.B. 1.0.0) - leer lassen für :latest only'
         required: false
         type: string
 
@@ -28,5 +28,5 @@ jobs:
           context: .
           push: true
           tags: |
-            cheinisch/ownpass:latest
-            ${{ inputs.version != '' && format('cheinisch/ownpass:{0}', inputs.version) || '' }}
+            cheinisch/owncards:latest
+            ${{ inputs.version != '' && format('cheinisch/owncards:{0}', inputs.version) || '' }}
