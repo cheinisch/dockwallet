@@ -156,6 +156,16 @@ export function parsePkpass(buffer) {
     const isVoided = p.voided === true
     const expirationDate = p.expirationDate ? parseDate(p.expirationDate) : null
 
+    // Bilder aus pkpass extrahieren
+    const logoEntry       = zip.getEntry("logo@2x.png")       || zip.getEntry("logo.png")
+    const stripEntry      = zip.getEntry("strip@2x.png")      || zip.getEntry("strip.png")
+    const backgroundEntry = zip.getEntry("background@2x.png") || zip.getEntry("background.png")
+    const thumbnailEntry  = zip.getEntry("thumbnail@2x.png")  || zip.getEntry("thumbnail.png")
+
+    const toB64 = (entry) => entry
+      ? "data:image/png;base64," + entry.getData().toString("base64")
+      : null
+
     return {
       pass_type:         passType || "generic",
       is_voided:         isVoided,
@@ -171,7 +181,6 @@ export function parsePkpass(buffer) {
       seat:              isBoardingPass ? getField("seat", "seatNumber") : null,
       booking_reference: isBoardingPass ? getField("confirmationNumber", "bookingRef", "pnr") : null,
       passenger_name:    getField("passenger", "name", "passengerName") || primaryValue || null,
-      // subtitle: bestes Nicht-Primär-Feld für Nicht-Boarding-Pässe
       subtitle:          !isBoardingPass && subtitleField
                            ? `${subtitleField.label ? subtitleField.label + ": " : ""}${String(subtitleField.value).trim()}`
                            : null,
@@ -181,7 +190,21 @@ export function parsePkpass(buffer) {
       color_background:  toHex(p.backgroundColor) || null,
       color_foreground:  toHex(p.foregroundColor) || null,
       color_label:       toHex(p.labelColor)      || null,
-      raw_data:          p,
+      // Alle strukturierten Felder + Bilder in raw_data für Frontend
+      raw_data: {
+        ...p,
+        _logo:       toB64(logoEntry),
+        _strip:      toB64(stripEntry),
+        _background: toB64(backgroundEntry),
+        _thumbnail:  toB64(thumbnailEntry),
+        _fields: {
+          header:    passBody.headerFields    || [],
+          primary:   passBody.primaryFields   || [],
+          secondary: passBody.secondaryFields || [],
+          auxiliary: passBody.auxiliaryFields || [],
+          back:      passBody.backFields      || [],
+        },
+      },
     }
   } catch (err) {
     throw new Error("Ungültige .pkpass-Datei: " + err.message)

@@ -11,14 +11,232 @@ import { fmtDate, fmtTime, extractPassDetails, IconBack, IconDots, IconTrash, Ic
  *   onClose  – Schließt das Overlay
  *   onDelete – Löscht den Pass (id)
  */
+// ─── Boarding Pass Layout (weißes Ticket mit Perforation) ────────────────────
+function BoardingPassCard({ pass, isVoided }) {
+  const bgStyle = pass.color_background
+    ? { background: `linear-gradient(135deg, ${pass.color_background}, ${pass.color_background}cc)` }
+    : { background: "linear-gradient(135deg, #0284c7, #1d4ed8)" }
+
+  return (
+    <div className="bg-white rounded-3xl overflow-hidden shadow-xl">
+      {isVoided && <VoidedBanner pass={pass} />}
+      <div className="px-6 py-5" style={bgStyle}>
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: pass.color_label ? pass.color_label + "cc" : "rgba(186,230,253,1)" }}>
+              Boarding Pass
+            </p>
+            <p className="font-bold text-xl leading-tight mt-1"
+              style={{ color: pass.color_foreground || "#ffffff" }}>
+              {pass.logo_text || pass.airline || "–"}
+            </p>
+          </div>
+          {pass.flight_number && (
+            <div className="text-right rounded-xl px-3 py-2"
+              style={{ backgroundColor: pass.color_foreground ? pass.color_foreground + "22" : "rgba(255,255,255,0.15)" }}>
+              <p className="text-[9px] uppercase tracking-widest"
+                style={{ color: pass.color_label ? pass.color_label + "aa" : "rgba(186,230,253,1)" }}>Flug</p>
+              <p className="font-mono font-black text-2xl leading-none mt-0.5"
+                style={{ color: pass.color_foreground || "#ffffff" }}>{pass.flight_number}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="px-6 pt-5 pb-4">
+        <div className="flex items-center gap-2">
+          <div className="text-center flex-1">
+            <p className="font-mono font-black text-5xl text-slate-900 leading-none tracking-tight">{pass.origin || "???"}</p>
+            {pass.departure_time && <p className="text-slate-400 text-xs mt-2 font-mono">{fmtTime(pass.departure_time)}</p>}
+          </div>
+          <div className="flex flex-col items-center gap-1 px-1">
+            <svg className="w-28 h-5 text-slate-300" viewBox="0 0 112 20" fill="none">
+              <line x1="0" y1="10" x2="96" y2="10" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3"/>
+              <path d="M98 6l8 4-8 4V6z" fill="currentColor"/>
+            </svg>
+            {pass.departure_time && <p className="text-[10px] text-slate-400 whitespace-nowrap">{fmtDate(pass.departure_time)}</p>}
+          </div>
+          <div className="text-center flex-1">
+            <p className="font-mono font-black text-5xl text-slate-900 leading-none tracking-tight">{pass.destination || "???"}</p>
+            {pass.arrival_time && <p className="text-slate-400 text-xs mt-2 font-mono">{fmtTime(pass.arrival_time)}</p>}
+          </div>
+        </div>
+      </div>
+
+      <div className="relative flex items-center my-1">
+        <div className="absolute -left-4 w-7 h-7 rounded-full bg-slate-950" />
+        <div className="flex-1 border-t-2 border-dashed border-slate-200 mx-4" />
+        <div className="absolute -right-4 w-7 h-7 rounded-full bg-slate-950" />
+      </div>
+
+      <div className="px-6 py-5 grid grid-cols-2 gap-x-6 gap-y-4">
+        {[
+          { label: "Passagier",    value: pass.passenger_name },
+          { label: "Sitz",         value: pass.seat },
+          { label: "Buchungs-Nr.", value: pass.booking_reference },
+          { label: "Ankunft",      value: pass.arrival_time ? fmtDate(pass.arrival_time) : null },
+        ].filter(f => f.value).map(({ label, value }) => (
+          <div key={label}>
+            <p className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold">{label}</p>
+            <p className="text-slate-900 font-bold text-sm mt-0.5 font-mono">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {pass.barcode && (
+        <div className="px-6 pb-6">
+          <div className="w-full border-t border-slate-100 mb-4" />
+          <BarcodeDisplay value={pass.barcode} raw={pass.raw_data} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Generic Pass Layout (farbige Karte wie Google/Apple Wallet) ──────────────
+function GenericPassCard({ pass, isVoided }) {
+  const raw = typeof pass.raw_data === "string"
+    ? (() => { try { return JSON.parse(pass.raw_data) } catch { return {} } })()
+    : pass.raw_data || {}
+
+  const fields     = raw._fields     || {}
+  const logo       = raw._logo       || null
+  const strip      = raw._strip      || null
+  const background = raw._background || null
+  const thumbnail  = raw._thumbnail  || null
+
+  const bg  = pass.color_background || "#334155"
+  const fg  = pass.color_foreground || "#ffffff"
+  const lbl = pass.color_label      || fg + "99"
+
+  // Weißer Hintergrund → dunklen Text erzwingen
+  const isLight = bg === "#ffffff" || bg === "#ffffffff"
+  const textFg  = isLight ? "#111827" : fg
+  const textLbl = isLight ? "#6b7280" : lbl
+  const divider = isLight ? "#e5e7eb" : fg + "33"
+
+  // Header-Felder (rechts oben)
+  const headerFields = (fields.header || []).filter(f => String(f.value || "").trim())
+
+  // Primärtitel: primaryField Wert (oft Event-Name), oder description
+  const primaryField = (fields.primary || []).find(f => String(f.value || "").trim())
+  const displayTitle = primaryField
+    ? String(primaryField.value).trim()
+    : pass.description || pass.logo_text || pass.airline || "–"
+
+  // Alle weiteren sichtbaren Felder
+  const gridFields = [
+    ...(fields.secondary || []),
+    ...(fields.auxiliary || []),
+  ].filter(f => String(f.value || "").trim())
+
+  return (
+    <div className="rounded-3xl overflow-hidden shadow-xl relative" style={{ backgroundColor: bg }}>
+
+      {/* Background-Bild (z.B. ticket.io Pässe) */}
+      {background && (
+        <div className="absolute inset-0 pointer-events-none">
+          <img src={background} alt="" className="w-full h-full object-cover opacity-20" />
+        </div>
+      )}
+
+      <div className="relative z-10">
+        {isVoided && <VoidedBanner pass={pass} />}
+
+        {/* Logo + Org-Name + Header-Felder */}
+        <div className="flex items-center gap-3 px-5 pt-5 pb-3">
+          {logo ? (
+            <img src={logo} alt="" className="w-10 h-10 rounded-xl object-contain"
+              style={{ background: isLight ? "#f3f4f6" : "rgba(255,255,255,0.1)", padding: 4 }} />
+          ) : thumbnail ? (
+            <img src={thumbnail} alt="" className="w-10 h-10 rounded-xl object-cover" />
+          ) : null}
+          <p className="font-semibold text-base" style={{ color: textFg }}>
+            {pass.airline || pass.logo_text || pass.description || "–"}
+          </p>
+          {headerFields.map((f, i) => (
+            <div key={i} className="ml-auto text-right">
+              {f.label && <p className="text-[9px] uppercase tracking-widest" style={{ color: textLbl }}>{f.label}</p>}
+              <p className="font-bold text-sm" style={{ color: textFg }}>{String(f.value)}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Trennlinie */}
+        <div className="mx-5 border-t" style={{ borderColor: divider }} />
+
+        {/* Haupt-Titel */}
+        <div className="px-5 pt-4 pb-2">
+          <p className="font-bold text-2xl leading-tight" style={{ color: textFg }}>{displayTitle}</p>
+          {primaryField?.label && (
+            <p className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: textLbl }}>
+              {primaryField.label}
+            </p>
+          )}
+        </div>
+
+        {/* Felder Grid */}
+        {gridFields.length > 0 && (
+          <div className="px-5 pb-3 grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+            {gridFields.map((f, i) => (
+              <div key={i}>
+                {f.label && (
+                  <p className="text-[9px] uppercase tracking-widest font-medium" style={{ color: textLbl }}>
+                    {f.label}
+                  </p>
+                )}
+                <p className="text-sm font-semibold mt-0.5" style={{ color: textFg }}>
+                  {String(f.value).trim()}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Barcode */}
+        {pass.barcode && (
+          <div className="px-5 pb-0 pt-3 flex flex-col items-center">
+            <div className="bg-white rounded-2xl px-4 py-4 w-full flex flex-col items-center">
+              <BarcodeDisplay value={pass.barcode} raw={raw} />
+            </div>
+          </div>
+        )}
+
+        {/* Strip-Bild (z.B. CineStar Card Banner) */}
+        {strip && (
+          <div className="w-full mt-0 overflow-hidden" style={{ maxHeight: 120 }}>
+            <img src={strip} alt="" className="w-full object-cover object-top" />
+          </div>
+        )}
+
+        {/* Padding am Ende wenn kein Strip */}
+        {!strip && <div className="pb-5" />}
+      </div>
+    </div>
+  )
+}
+
+// ─── Abgelaufen-Banner ────────────────────────────────────────────────────────
+function VoidedBanner({ pass }) {
+  return (
+    <div className="bg-red-500 px-4 py-2 flex items-center gap-2">
+      <svg className="w-3.5 h-3.5 text-white shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+      </svg>
+      <p className="text-white text-xs font-semibold">
+        {pass.is_voided ? "Dieser Pass wurde entwertet" : `Abgelaufen am ${fmtDate(pass.expiration_date)}`}
+      </p>
+    </div>
+  )
+}
+
+// ─── Main Overlay ─────────────────────────────────────────────────────────────
 export default function PassDetailOverlay({ pass, onClose, onDelete }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { back, extra } = extractPassDetails(pass.raw_data)
-
-  const isVoided  = pass.is_voided || (pass.expiration_date && new Date(pass.expiration_date) < new Date())
-  const bgStyle   = pass.color_background
-    ? { background: `linear-gradient(135deg, ${pass.color_background}, ${pass.color_background}cc)` }
-    : { background: "linear-gradient(135deg, #0284c7, #1d4ed8)" }
+  const isVoided = pass.is_voided || (pass.expiration_date && new Date(pass.expiration_date) < new Date())
 
   return (
     <div
@@ -53,121 +271,10 @@ export default function PassDetailOverlay({ pass, onClose, onDelete }) {
 
           {/* Ticket-Inhalt */}
           <div className="overflow-y-auto flex-1 px-4 pb-8">
-            <div className="bg-white rounded-3xl overflow-hidden shadow-xl">
-
-              {/* Abgelaufen-Banner */}
-              {isVoided && (
-                <div className="bg-red-500 px-4 py-2 flex items-center gap-2">
-                  <svg className="w-3.5 h-3.5 text-white shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-                  </svg>
-                  <p className="text-white text-xs font-semibold">
-                    {pass.is_voided ? "Dieser Pass wurde entwertet" : `Abgelaufen am ${fmtDate(pass.expiration_date)}`}
-                  </p>
-                </div>
-              )}
-
-              {/* Header mit Pass-Farbe */}
-              <div className="px-6 py-5" style={bgStyle}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest"
-                      style={{ color: pass.color_label ? pass.color_label + "cc" : "rgba(186,230,253,1)" }}>
-                      {pass.flight_number ? "Boarding Pass" : "Pass"}
-                    </p>
-                    <p className="font-bold text-xl leading-tight mt-1"
-                      style={{ color: pass.color_foreground || "#ffffff" }}>
-                      {pass.logo_text || pass.airline || "–"}
-                    </p>
-                  </div>
-                  {pass.flight_number && (
-                    <div className="text-right rounded-xl px-3 py-2"
-                      style={{ backgroundColor: pass.color_foreground ? pass.color_foreground + "22" : "rgba(255,255,255,0.15)" }}>
-                      <p className="text-[9px] uppercase tracking-widest"
-                        style={{ color: pass.color_label ? pass.color_label + "aa" : "rgba(186,230,253,1)" }}>Flug</p>
-                      <p className="font-mono font-black text-2xl leading-none mt-0.5"
-                        style={{ color: pass.color_foreground || "#ffffff" }}>{pass.flight_number}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Route (Boarding Pass) oder Name (Generic) */}
-              {pass.origin || pass.destination ? (
-                <div className="px-6 pt-5 pb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="text-center flex-1">
-                      <p className="font-mono font-black text-5xl text-slate-900 leading-none tracking-tight">
-                        {pass.origin || "???"}
-                      </p>
-                      {pass.departure_time && (
-                        <p className="text-slate-400 text-xs mt-2 font-mono">{fmtTime(pass.departure_time)}</p>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-center gap-1 px-1">
-                      <svg className="w-28 h-5 text-slate-300" viewBox="0 0 112 20" fill="none">
-                        <line x1="0" y1="10" x2="96" y2="10" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3"/>
-                        <path d="M98 6l8 4-8 4V6z" fill="currentColor"/>
-                      </svg>
-                      {pass.departure_time && (
-                        <p className="text-[10px] text-slate-400 whitespace-nowrap">{fmtDate(pass.departure_time)}</p>
-                      )}
-                    </div>
-                    <div className="text-center flex-1">
-                      <p className="font-mono font-black text-5xl text-slate-900 leading-none tracking-tight">
-                        {pass.destination || "???"}
-                      </p>
-                      {pass.arrival_time && (
-                        <p className="text-slate-400 text-xs mt-2 font-mono">{fmtTime(pass.arrival_time)}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="px-6 pt-5 pb-4">
-                  {pass.passenger_name && (
-                    <div>
-                      <p className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Name</p>
-                      <p className="font-bold text-2xl text-slate-900">{pass.passenger_name}</p>
-                    </div>
-                  )}
-                  {pass.subtitle && (
-                    <p className="text-sm text-slate-500 mt-2">{pass.subtitle}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Perforations-Trennlinie */}
-              <div className="relative flex items-center my-1">
-                <div className="absolute -left-4 w-7 h-7 rounded-full bg-slate-950" />
-                <div className="flex-1 border-t-2 border-dashed border-slate-200 mx-4" />
-                <div className="absolute -right-4 w-7 h-7 rounded-full bg-slate-950" />
-              </div>
-
-              {/* Detail-Grid */}
-              <div className="px-6 py-5 grid grid-cols-2 gap-x-6 gap-y-4">
-                {[
-                  { label: "Passagier",    value: pass.passenger_name },
-                  { label: "Sitz",         value: pass.seat },
-                  { label: "Buchungs-Nr.", value: pass.booking_reference },
-                  { label: "Ankunft",      value: pass.arrival_time ? fmtDate(pass.arrival_time) : null },
-                ].filter(f => f.value).map(({ label, value }) => (
-                  <div key={label}>
-                    <p className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold">{label}</p>
-                    <p className="text-slate-900 font-bold text-sm mt-0.5 font-mono">{value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Barcode */}
-              {pass.barcode && (
-                <div className="px-6 pb-6">
-                  <div className="w-full border-t border-slate-100 mb-4" />
-                  <BarcodeDisplay value={pass.barcode} raw={pass.raw_data} />
-                </div>
-              )}
-            </div>
+            {pass.origin || pass.destination
+              ? <BoardingPassCard pass={pass} isVoided={isVoided} />
+              : <GenericPassCard  pass={pass} isVoided={isVoided} />
+            }
           </div>
         </div>
 
@@ -218,17 +325,24 @@ export default function PassDetailOverlay({ pass, onClose, onDelete }) {
                   </div>
                 </div>
 
-                {/* Back Fields */}
+                {/* Back Fields – als fließender Text zusammengefasst */}
                 {back.length > 0 && (
                   <div>
                     <p className="text-[10px] uppercase tracking-widest text-slate-600 font-semibold mb-3">Pass-Informationen</p>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {back.map((field, i) => (
-                        <div key={i} className="bg-slate-800/60 rounded-xl px-4 py-3">
-                          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">
-                            {field.label || field.key}
+                        <div key={i}>
+                          {field.label && (
+                            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-medium mb-0.5">
+                              {field.label}
+                            </p>
+                          )}
+                          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                            {String(field.value)}
                           </p>
-                          <p className="text-sm text-slate-200 mt-0.5 leading-relaxed">{String(field.value)}</p>
+                          {i < back.length - 1 && (
+                            <div className="mt-3 border-b border-slate-800/60" />
+                          )}
                         </div>
                       ))}
                     </div>
