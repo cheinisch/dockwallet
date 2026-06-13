@@ -55,3 +55,9 @@ CREATE TRIGGER users_updated_at
 CREATE TRIGGER passes_updated_at
     BEFORE UPDATE ON passes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Default Admin User
+-- Username: admin@local
+-- Password: admin
+INSERT INTO users (email, password_hash, is_admin)
+VALUES ('admin@local', '$2b$10$UGrdda.CDPLnkvmnHNNvVeP37SvGTi57qlTCpsIN.3n.CoEgb8cQ.', TRUE);
