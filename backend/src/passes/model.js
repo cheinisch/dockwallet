@@ -1,4 +1,5 @@
 import { query } from "../db.js"
+const query = (text, params) => pool.query(text, params)
 import AdmZip from "adm-zip"
 
 /**
