@@ -37,6 +37,16 @@ export default function Nav() {
 
   const isActive = (path) => location.pathname === path
 
+  const handleAddCard = () => {
+    if (location.pathname === "/passes" || location.pathname === "/passes/add") {
+      // Already on passes page — fire a custom event so Passes.jsx opens the modal directly
+      window.dispatchEvent(new CustomEvent("dockwallet:add-pass"))
+    } else {
+      // Navigate to /passes/add so Passes mounts with add=true
+      navigate("/passes/add")
+    }
+  }
+
   return (
     <nav className="bg-slate-900 border-b border-slate-800 px-4 h-14 flex items-center justify-between">
       <div className="flex items-center gap-1">
@@ -44,10 +54,13 @@ export default function Nav() {
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive("/passes") ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-100 hover:bg-slate-800"}`}>
           My Cards
         </Link>
-        <Link to="/passes/add"
+
+        <button
+          onClick={handleAddCard}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive("/passes/add") ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-100 hover:bg-slate-800"}`}>
           + Add Card
-        </Link>
+        </button>
+
         {user?.is_admin && (
           <Link to="/admin"
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive("/admin") ? "bg-sky-500 text-slate-950" : "text-sky-400 hover:text-sky-300 hover:bg-slate-800"}`}>

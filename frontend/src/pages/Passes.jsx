@@ -556,6 +556,13 @@ export default function Passes({ add }) {
   // Open modal when navigated to /passes/add
   useEffect(() => { if (add) setShowModal(true) }, [add])
 
+  // Open modal when Nav fires the custom event (user already on /passes)
+  useEffect(() => {
+    const handler = () => setShowModal(true)
+    window.addEventListener("dockwallet:add-pass", handler)
+    return () => window.removeEventListener("dockwallet:add-pass", handler)
+  }, [])
+
   const handleSuccess = (newPass) => {
     setPasses(prev => [newPass, ...prev])
     setShowModal(false)
