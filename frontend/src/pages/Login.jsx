@@ -21,7 +21,7 @@ export default function Login() {
       }
       const data = await res.json()
       localStorage.setItem("token", data.token)
-      navigate("/dashboard")
+      navigate("/passes")
     } catch {
       setError("Server nicht erreichbar")
     }
