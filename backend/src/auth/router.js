@@ -16,6 +16,8 @@ import {
   sendVerificationMail,
   sendPasswordResetMail,
   sendDeleteAccountMail,
+  sendMfaCodeMail,
+  isSmtpConfigured,
 } from "../mail.js"
 
 const router = Router()
@@ -33,7 +35,7 @@ const rpName = "DockWallet"
 const rpID = () => process.env.SERVER_HOST || "localhost"
 const origin = () => `https://${rpID()}`
 
-// ─── Config ──────────────────────────────────────────────────────────────────
+// ─── Config ───────────────────────────────────────────────────────────────────
 
 router.get("/config", (req, res) => {
   res.json({ registrationEnabled: process.env.USER_REGISTRATION === "true" })
@@ -217,7 +219,6 @@ router.post("/forgot-password", async (req, res) => {
 
   try {
     const result = await pool.query("SELECT id FROM users WHERE email = $1", [email])
-    // Immer OK zurückgeben (kein User-Enumeration)
     if (!result.rows[0]) return res.json({ message: "Falls die E-Mail existiert, wurde eine Mail gesendet." })
 
     const user = result.rows[0]
@@ -331,6 +332,37 @@ router.post("/mfa/disable", requireAuth, async (req, res) => {
     res.json({ message: "MFA deaktiviert" })
   } catch (err) {
     console.error("MFA-Disable-Fehler:", err)
+    res.status(500).json({ error: "Serverfehler" })
+  }
+})
+
+// ─── MFA per Mail ─────────────────────────────────────────────────────────────
+
+router.get("/mfa/smtp-status", requireAuth, (req, res) => {
+  res.json({ smtpConfigured: isSmtpConfigured() })
+})
+
+router.post("/mfa/send-code", requireAuth, async (req, res) => {
+  if (!isSmtpConfigured()) {
+    return res.status(503).json({ error: "SMTP nicht konfiguriert" })
+  }
+
+  try {
+    const secretResult = await pool.query(
+      "SELECT secret FROM mfa_secrets WHERE user_id = $1",
+      [req.user.id]
+    )
+    const secret = secretResult.rows[0]?.secret
+    if (!secret) return res.status(400).json({ error: "MFA nicht eingerichtet" })
+
+    const code = authenticator.generate(secret)
+
+    const userResult = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id])
+    await sendMfaCodeMail(userResult.rows[0].email, code)
+
+    res.json({ message: "Code gesendet" })
+  } catch (err) {
+    console.error("MFA send-code Fehler:", err)
     res.status(500).json({ error: "Serverfehler" })
   }
 })

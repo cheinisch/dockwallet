@@ -77,3 +77,27 @@ export async function sendDeleteAccountMail(email, token) {
     `,
   })
 }
+
+export function isSmtpConfigured() {
+  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+}
+
+export async function sendMfaCodeMail(email, code) {
+  await createTransport().sendMail({
+    from: from(),
+    to: email,
+    subject: "DockWallet – Dein MFA-Einrichtungscode",
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+        <h2>MFA-Einrichtungscode</h2>
+        <p>Dein 6-stelliger Code zur MFA-Einrichtung:</p>
+        <div style="font-size:32px;font-weight:700;letter-spacing:8px;background:#0f172a;color:#e2e8f0;padding:20px 24px;border-radius:8px;text-align:center;margin:16px 0">
+          ${code}
+        </div>
+        <p style="color:#888;font-size:12px;margin-top:24px">
+          Der Code ist 15 Minuten gültig. Falls du das nicht angefordert hast, kannst du diese Mail ignorieren.
+        </p>
+      </div>
+    `,
+  })
+}

@@ -48,8 +48,8 @@ function Toggle({ label, description, checked, onChange }) {
         {description && <p className="text-xs text-slate-500">{description}</p>}
       </div>
       <button onClick={() => onChange(!checked)}
-        className={`relative w-10 h-6 rounded-full transition-colors ${checked ? "bg-sky-500" : "bg-slate-700"}`}>
-        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${checked ? "translate-x-5" : "translate-x-1"}`} />
+        className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${checked ? "bg-sky-500" : "bg-slate-700"}`}>
+        <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${checked ? "translate-x-5" : "translate-x-0"}`} />
       </button>
     </div>
   )

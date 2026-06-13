@@ -13,6 +13,9 @@ export default function Profile() {
   const [mfaStep, setMfaStep] = useState(null) // null | "setup" | "disable"
   const [mfaData, setMfaData] = useState(null)
   const [mfaCode, setMfaCode] = useState("")
+  const [smtpConfigured, setSmtpConfigured] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
+  const [mailSending, setMailSending] = useState(false)
   const [newDeviceName, setNewDeviceName] = useState("")
   const [msg, setMsg] = useState({ type: "", text: "" })
   const [loading, setLoading] = useState(false)
@@ -21,6 +24,10 @@ export default function Profile() {
   useEffect(() => {
     fetchUser()
     fetchPasskeys()
+    fetch("/api/auth/mfa/smtp-status", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => setSmtpConfigured(d.smtpConfigured))
+      .catch(() => {})
   }, [])
 
   const fetchUser = async () => {
@@ -59,6 +66,22 @@ export default function Profile() {
     if (!res.ok) { showMsg("error", data.error); return }
     setMfaData(data)
     setMfaStep("setup")
+  }
+
+  const handleCopySecret = () => {
+    navigator.clipboard.writeText(mfaData.secret)
+    setCodeCopied(true)
+    setTimeout(() => setCodeCopied(false), 2000)
+  }
+
+  const handleSendCodeMail = async () => {
+    setMailSending(true)
+    try {
+      const res = await fetch("/api/auth/mfa/send-code", { method: "POST", headers: authHeaders() })
+      const data = await res.json()
+      showMsg(res.ok ? "success" : "error", data.message || data.error)
+    } catch { showMsg("error", "Serverfehler") }
+    finally { setMailSending(false) }
   }
 
   const handleMfaEnable = async () => {
@@ -158,16 +181,48 @@ export default function Profile() {
         </div>
 
         {mfaStep === "setup" && mfaData && (
-          <div className="space-y-3">
-            <p className="text-xs text-slate-400">Scanne den QR-Code mit deiner Authenticator-App:</p>
-            <img src={mfaData.qrCode} alt="MFA QR" className="w-40 h-40 rounded-lg" />
-            <p className="text-xs text-slate-500 font-mono break-all">{mfaData.secret}</p>
+          <div className="space-y-4">
+            <p className="text-xs text-slate-400">Scanne den QR-Code mit deiner Authenticator-App oder kopiere den Code manuell:</p>
+
+            {/* QR Code */}
+            <div className="flex justify-center">
+              <img src={mfaData.qrCode} alt="MFA QR" className="w-44 h-44 rounded-xl bg-white p-2" />
+            </div>
+
+            {/* Secret kopieren */}
+            <div className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-300 font-mono break-all">{mfaData.secret}</p>
+              <button onClick={handleCopySecret}
+                className="shrink-0 text-xs text-sky-400 hover:text-sky-300 transition-colors font-medium">
+                {codeCopied ? "✓ Kopiert" : "Kopieren"}
+              </button>
+            </div>
+
+            {/* Per Mail senden */}
+            {smtpConfigured ? (
+              <button onClick={handleSendCodeMail} disabled={mailSending}
+                className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-sm font-medium py-2 rounded-lg transition-all">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                {mailSending ? "Sende..." : "Code per E-Mail senden"}
+              </button>
+            ) : (
+              <div className="flex items-start gap-2 bg-yellow-950/40 border border-yellow-900/60 rounded-lg px-3 py-2.5">
+                <svg className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <p className="text-xs text-yellow-400">SMTP nicht konfiguriert. Richte SMTP in der <code className="font-mono">.env</code> ein, um Codes per E-Mail zu versenden.</p>
+              </div>
+            )}
+
+            {/* Code eingeben */}
             <input type="text" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)}
-              placeholder="6-stelliger Code" maxLength={6}
+              placeholder="6-stelliger Code zur Bestätigung" maxLength={6}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm px-3 py-2.5 outline-none placeholder-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-center tracking-widest" />
             <div className="flex gap-2">
               <button onClick={handleMfaEnable} className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-sm px-4 py-2 rounded-lg transition-all">Aktivieren</button>
-              <button onClick={() => { setMfaStep(null); setMfaCode("") }} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2 transition-colors">Abbrechen</button>
+              <button onClick={() => { setMfaStep(null); setMfaCode(""); setMfaData(null) }} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2 transition-colors">Abbrechen</button>
             </div>
           </div>
         )}
