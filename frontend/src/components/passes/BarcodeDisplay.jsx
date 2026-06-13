@@ -7,19 +7,26 @@ import { useState, useEffect, useRef } from "react"
  *
  * Props:
  *   value  – Barcode-Nachricht (String)
- *   raw    – pass.raw_data (für Format-Erkennung)
+ *   raw    – pass.raw_data (Objekt oder JSON-String)
  */
 export default function BarcodeDisplay({ value, raw }) {
   const canvasRef = useRef(null)
   const [error, setError] = useState(null)
+  const [rendered, setRendered] = useState(false)
 
-  const format   = raw?.barcodes?.[0]?.format || raw?.barcode?.format || "PKBarcodeFormatQR"
+  // raw_data kann als String aus der DB kommen → parsen
+  const rawObj = typeof raw === "string" ? (() => { try { return JSON.parse(raw) } catch { return null } })() : raw
+
+  const format   = rawObj?.barcodes?.[0]?.format || rawObj?.barcode?.format || "PKBarcodeFormatQR"
   const isQR     = format === "PKBarcodeFormatQR"
   const isAztec  = format === "PKBarcodeFormatAztec"
   const isPDF417 = format === "PKBarcodeFormatPDF417"
 
   useEffect(() => {
     if (!value || (!isQR && !isAztec)) return
+    setRendered(false)
+    setError(null)
+
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -34,11 +41,13 @@ export default function BarcodeDisplay({ value, raw }) {
           })
         }
         await window.QRCode.toCanvas(canvas, value, {
-          width: 200,
+          width: 180,
           margin: 2,
           color: { dark: "#1e293b", light: "#ffffff" },
           errorCorrectionLevel: "M",
+          scale: 4,
         })
+        setRendered(true)
       } catch (e) {
         setError(e.message)
       }
@@ -51,10 +60,16 @@ export default function BarcodeDisplay({ value, raw }) {
   if (isQR || isAztec) {
     return (
       <div className="flex flex-col items-center gap-2">
-        {error
-          ? <p className="text-xs text-red-400">{error}</p>
-          : <canvas ref={canvasRef} className="rounded-lg" style={{ width: 160, height: 160 }} />
-        }
+        <div className="relative rounded-xl overflow-hidden border border-slate-200"
+             style={{ width: 188, height: 188, background: "#ffffff", padding: 4 }}>
+          {!rendered && !error && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
+              <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin" />
+            </div>
+          )}
+          <canvas ref={canvasRef} className="block rounded-lg max-w-full" />
+        </div>
+        {error && <p className="text-xs text-red-400">{error}</p>}
         <span className="text-[10px] font-mono text-slate-500 tracking-wider text-center break-all max-w-[200px]">
           {value.length > 40 ? value.slice(0, 40) + "…" : value}
         </span>
