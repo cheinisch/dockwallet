@@ -1,13 +1,19 @@
 services:
-  app:
-    image: cheinisch/ownpass:latest
+  frontend:
+    image: cheinisch/dockwallet-frontend:latest
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8080:80"
+    depends_on:
+      - backend
+
+  backend:
+    image: cheinisch/dockwallet-backend:latest
+    restart: unless-stopped
     environment:
       DB_HOST: db
       DB_PORT: 5432
-      DB_NAME: ownpass
+      DB_NAME: dockwallet
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
@@ -19,14 +25,14 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ownpass
+      POSTGRES_DB: dockwallet
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ownpass"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d dockwallet"]
       interval: 5s
       timeout: 5s
       retries: 5
