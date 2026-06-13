@@ -29,6 +29,10 @@ CREATE TABLE passes (
     seat VARCHAR(20),
     booking_reference VARCHAR(50),
     barcode TEXT,
+    color_background VARCHAR(20),
+    color_foreground VARCHAR(20),
+    color_label VARCHAR(20),
+    logo_text VARCHAR(255),
     raw_data JSONB,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
