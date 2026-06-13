@@ -141,16 +141,50 @@ export function parsePkpass(buffer) {
       ?.map(f => String(f.value).trim())
       .find(v => v.length > 0) || null
 
-    // Bestes Subtitle-Feld (für Kartenanzeige bei Generic/Event/Coupon)
+    // Primärfeld-Label (z.B. beim Kino = Kino-Name, bei Autostadt = "EVENT")
+    const primaryFieldLabel = passBody.primaryFields?.[0]?.label?.trim() || null
+
+    // Subtitle für Kartenanzeige:
+    // Priorität: primaryField-Label (wenn es kein generisches Wort ist) → erstes secondaryField
+    const genericLabels = ["event", "ticket", "tickettyp", "name", "pass"]
+    const usePrimaryLabelAsSubtitle = primaryFieldLabel &&
+      !genericLabels.includes(primaryFieldLabel.toLowerCase()) &&
+      primaryFieldLabel.toLowerCase() !== (p.organizationName || "").toLowerCase().slice(0, primaryFieldLabel.length)
+
     const subtitleField = [
       ...(passBody.secondaryFields || []),
       ...(passBody.auxiliaryFields || []),
-      ...(passBody.headerFields    || []),
     ].find(f => String(f.value || "").trim())
+
+    const subtitle = !isBoardingPass
+      ? usePrimaryLabelAsSubtitle
+        ? primaryFieldLabel
+        : subtitleField
+          ? `${subtitleField.label ? subtitleField.label + ": " : ""}${String(subtitleField.value).trim()}`
+          : null
+      : null
 
     const barcodes = p.barcodes || (p.barcode ? [p.barcode] : [])
     const barcodeValue = barcodes[0]?.message || null
     const isBoardingPass = passType === "boardingPass"
+
+    // Datum für Nicht-Boarding-Pässe:
+    // Suche in headerFields, auxiliaryFields, relevantDate, expirationDate
+    let eventDate = null
+    if (!isBoardingPass) {
+      // 1. relevantDate aus pass.json root
+      if (p.relevantDate) eventDate = parseDate(p.relevantDate)
+      // 2. Datumsfelder in allen Feldern (ISO-Format oder erkennbares Datum)
+      if (!eventDate) {
+        const dateField = allFields.find(f => {
+          const v = String(f.value || "")
+          return /^\d{4}-\d{2}-\d{2}T/.test(v) || /^\d{4}-\d{2}-\d{2}\s/.test(v)
+        })
+        if (dateField) eventDate = parseDate(String(dateField.value))
+      }
+      // 3. expirationDate als letzter Fallback
+      if (!eventDate && p.expirationDate) eventDate = parseDate(p.expirationDate)
+    }
 
     // Ablauf/voided Status für Frontend
     const isVoided = p.voided === true
@@ -178,12 +212,11 @@ export function parsePkpass(buffer) {
       destination:       isBoardingPass ? getField("destination", "arrive", "to", "arrivalAirport") : null,
       departure_time:    isBoardingPass ? parseDate(getField("departureDate", "boardingTime", "departure")) : null,
       arrival_time:      isBoardingPass ? parseDate(getField("arrivalDate", "arrivalTime", "arrival")) : null,
+      event_date:        !isBoardingPass ? eventDate : null,
       seat:              isBoardingPass ? getField("seat", "seatNumber") : null,
       booking_reference: isBoardingPass ? getField("confirmationNumber", "bookingRef", "pnr") : null,
       passenger_name:    getField("passenger", "name", "passengerName") || primaryValue || null,
-      subtitle:          !isBoardingPass && subtitleField
-                           ? `${subtitleField.label ? subtitleField.label + ": " : ""}${String(subtitleField.value).trim()}`
-                           : null,
+      subtitle,
       logo_text:         p.logoText || null,
       description:       p.description || null,
       barcode:           barcodeValue,
@@ -220,13 +253,14 @@ function parseDate(val) {
 export async function getPassesByUser(userId) {
   const result = await query(
     `SELECT id, airline, flight_number, origin, destination,
-            departure_time, arrival_time, passenger_name,
+            departure_time, arrival_time, event_date, passenger_name,
             seat, booking_reference, barcode,
             color_background, color_foreground, color_label, logo_text,
             signature_valid, signature_reason,
             is_voided, expiration_date, subtitle,
             raw_data, created_at
-     FROM passes WHERE user_id = $1 ORDER BY departure_time DESC NULLS LAST, created_at DESC`,
+     FROM passes WHERE user_id = $1
+     ORDER BY COALESCE(departure_time, event_date) DESC NULLS LAST, created_at DESC`,
     [userId]
   )
   return result.rows
@@ -236,17 +270,17 @@ export async function createPass(userId, data) {
   const result = await query(
     `INSERT INTO passes
        (user_id, airline, flight_number, origin, destination,
-        departure_time, arrival_time, passenger_name,
+        departure_time, arrival_time, event_date, passenger_name,
         seat, booking_reference, barcode,
         color_background, color_foreground, color_label, logo_text,
         signature_valid, signature_reason,
         is_voided, expiration_date, subtitle,
         raw_data)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING *`,
     [
       userId, data.airline, data.flight_number, data.origin, data.destination,
-      data.departure_time, data.arrival_time, data.passenger_name,
+      data.departure_time, data.arrival_time, data.event_date || null, data.passenger_name,
       data.seat, data.booking_reference, data.barcode,
       data.color_background, data.color_foreground, data.color_label,
       data.logo_text || data.description || null,

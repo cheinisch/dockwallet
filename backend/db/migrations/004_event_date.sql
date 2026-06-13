@@ -1,0 +1,2 @@
+ALTER TABLE passes
+  ADD COLUMN IF NOT EXISTS event_date TIMESTAMP;

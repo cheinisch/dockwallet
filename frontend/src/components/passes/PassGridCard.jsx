@@ -125,14 +125,31 @@ export default function PassGridCard({ pass, onClick }) {
 
         {/* Datum-Strip */}
         <div className="px-4 py-2.5 flex items-center justify-between">
-          <span className="text-[11px]" style={{ color: textLbl }}>
-            {pass.departure_time ? fmtDate(pass.departure_time) : "Kein Datum"}
-          </span>
-          {pass.departure_time && (
-            <span className="text-[11px] font-mono font-semibold" style={{ color: textFg }}>
-              {fmtTime(pass.departure_time)}
-            </span>
-          )}
+          {(() => {
+            const d = pass.departure_time || pass.event_date
+            const raw = pass.raw_data
+              ? (typeof pass.raw_data === "string"
+                  ? (() => { try { return JSON.parse(pass.raw_data) } catch { return null } })()
+                  : pass.raw_data)
+              : null
+            // Fallback: lesbares Datum aus headerField
+            const headerDateField = raw?._fields?.header?.find(f =>
+              /\d{2}[.:]\d{2}/.test(String(f.value || "")) || /\d{4}/.test(String(f.label || ""))
+            )
+            const headerDateText = headerDateField
+              ? (String(headerDateField.label || "") + " " + String(headerDateField.value || "")).trim()
+              : null
+            return d ? (
+              <>
+                <span className="text-[11px]" style={{ color: textLbl }}>{fmtDate(d)}</span>
+                <span className="text-[11px] font-mono font-semibold" style={{ color: textFg }}>{fmtTime(d)}</span>
+              </>
+            ) : headerDateText ? (
+              <span className="text-[11px]" style={{ color: textLbl }}>{headerDateText}</span>
+            ) : (
+              <span className="text-[11px]" style={{ color: textLbl }}>Kein Datum</span>
+            )
+          })()}
         </div>
       </div>
     </button>

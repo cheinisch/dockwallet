@@ -298,9 +298,7 @@ export default function Passes({ add }) {
 
   const isExpiredOrVoided = (p) => {
     if (p.is_voided) return true
-    // Aus DB-Feld
     if (p.expiration_date && new Date(p.expiration_date) < new Date()) return true
-    // Fallback: aus raw_data (für ältere Einträge ohne expiration_date in DB)
     const raw = p.raw_data
       ? (typeof p.raw_data === "string"
           ? (() => { try { return JSON.parse(p.raw_data) } catch { return null } })()
@@ -311,11 +309,13 @@ export default function Passes({ add }) {
     return false
   }
 
+  const getPassDate = (p) => p.departure_time || p.event_date || null
+
   const upcoming = passes.filter(p =>
-    !isExpiredOrVoided(p) && (!p.departure_time || new Date(p.departure_time) >= new Date())
+    !isExpiredOrVoided(p) && (!getPassDate(p) || new Date(getPassDate(p)) >= new Date())
   )
   const past = passes.filter(p =>
-    isExpiredOrVoided(p) || (p.departure_time && new Date(p.departure_time) < new Date())
+    isExpiredOrVoided(p) || (getPassDate(p) && new Date(getPassDate(p)) < new Date())
   )
 
   return (
