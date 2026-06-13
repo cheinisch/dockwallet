@@ -1,12 +1,34 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 
 export default function Login() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const navigate = useNavigate()
 
-  const handleSubmit = () => {
-    // TODO: API call to /api/auth/login
-    console.log("Login:", username)
+  const handleLogin = async () => {
+    setError("")
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      })
+      if (!res.ok) {
+        setError("Ungültige Anmeldedaten")
+        return
+      }
+      const data = await res.json()
+      localStorage.setItem("token", data.token)
+      navigate("/dashboard")
+    } catch {
+      setError("Server nicht erreichbar")
+    }
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") handleLogin()
   }
 
   return (
@@ -22,6 +44,12 @@ export default function Login() {
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
 
+          {error && (
+            <div className="mb-4 text-sm text-red-400 bg-red-950 border border-red-900 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+
           <div className="mb-4">
             <label className="block text-xs text-slate-400 mb-1.5 font-medium">
               Username / Mail
@@ -30,6 +58,7 @@ export default function Login() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="user@example.com"
               autoComplete="username"
               className="w-full bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm px-3 py-2.5 outline-none placeholder-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
@@ -44,6 +73,7 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="••••••••"
               autoComplete="current-password"
               className="w-full bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm px-3 py-2.5 outline-none placeholder-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
@@ -51,14 +81,13 @@ export default function Login() {
           </div>
 
           <button
-            onClick={handleSubmit}
-            className="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-sm py-2.5 rounded-lg transition-colors"
+            onClick={handleLogin}
+            className="w-full bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-semibold text-sm py-2.5 rounded-lg transition-all"
           >
             Login
           </button>
 
         </div>
-
       </div>
     </div>
   )
