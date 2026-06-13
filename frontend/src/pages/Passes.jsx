@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import PassGridCard from "../components/passes/PassGridCard.jsx"
 import PassDetailOverlay from "../components/passes/PassDetailOverlay.jsx"
-import { IconPlane, IconPlus, IconUpload, IconQr, IconClose } from "../components/passes/passUtils.js"
+import { IconPlane, IconPlus, IconUpload, IconQr, IconClose } from "../components/passes/passUtils.jsx"
 
 // ─── QR Scanner ───────────────────────────────────────────────────────────────
 function QrScanner({ onResult, onClose }) {

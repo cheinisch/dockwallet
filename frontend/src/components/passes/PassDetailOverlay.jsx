@@ -1,6 +1,6 @@
 import { useState } from "react"
 import BarcodeDisplay from "./BarcodeDisplay.jsx"
-import { fmtDate, fmtTime, extractPassDetails, IconBack, IconDots, IconTrash, IconClose } from "./passUtils.js"
+import { fmtDate, fmtTime, extractPassDetails, IconBack, IconDots, IconTrash, IconClose } from "./passUtils.jsx"
 
 /**
  * Vollbild-Overlay mit realistischer Ticket-Darstellung.

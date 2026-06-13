@@ -1,4 +1,4 @@
-import { fmtDate, fmtTime } from "./passUtils.js"
+import { fmtDate, fmtTime } from "./passUtils.jsx"
 
 /**
  * Kompakte Ticket-Karte für die Rasteransicht.
