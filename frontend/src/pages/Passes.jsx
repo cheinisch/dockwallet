@@ -296,8 +296,27 @@ export default function Passes({ add }) {
   const closeModal = () => { setShowModal(false); navigate("/passes", { replace: true }) }
   const openAdd    = () => { setShowModal(true);  navigate("/passes/add", { replace: true }) }
 
-  const upcoming = passes.filter(p => !p.departure_time || new Date(p.departure_time) >= new Date())
-  const past     = passes.filter(p =>  p.departure_time && new Date(p.departure_time) < new Date())
+  const isExpiredOrVoided = (p) => {
+    if (p.is_voided) return true
+    // Aus DB-Feld
+    if (p.expiration_date && new Date(p.expiration_date) < new Date()) return true
+    // Fallback: aus raw_data (für ältere Einträge ohne expiration_date in DB)
+    const raw = p.raw_data
+      ? (typeof p.raw_data === "string"
+          ? (() => { try { return JSON.parse(p.raw_data) } catch { return null } })()
+          : p.raw_data)
+      : null
+    if (raw?.expirationDate && new Date(raw.expirationDate) < new Date()) return true
+    if (raw?.voided === true) return true
+    return false
+  }
+
+  const upcoming = passes.filter(p =>
+    !isExpiredOrVoided(p) && (!p.departure_time || new Date(p.departure_time) >= new Date())
+  )
+  const past = passes.filter(p =>
+    isExpiredOrVoided(p) || (p.departure_time && new Date(p.departure_time) < new Date())
+  )
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -328,7 +347,7 @@ export default function Passes({ add }) {
 
         {!loading && past.length > 0 && (
           <section>
-            <p className="text-[11px] uppercase tracking-widest text-slate-600 font-semibold mb-3">Vergangene Flüge</p>
+            <p className="text-[11px] uppercase tracking-widest text-slate-600 font-semibold mb-3">Abgelaufen & Vergangen</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {past.map(p => <PassGridCard key={p.id} pass={p} onClick={() => setSelectedPass(p)} />)}
             </div>
