@@ -6,7 +6,7 @@ COPY package.json .
 RUN npm install --production
 
 COPY src/ ./src/
-COPY db/init.sql ./db/init.sql
+COPY db/migrations/* ./db/migrations/
 
 EXPOSE 3000
 
