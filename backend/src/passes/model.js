@@ -142,6 +142,8 @@ export function parsePkpass(buffer) {
       .find(v => v.length > 0) || null
 
     // Primärfeld-Label (z.B. beim Kino = Kino-Name, bei Autostadt = "EVENT")
+    const isBoardingPass = passType === "boardingPass"
+
     const primaryFieldLabel = passBody.primaryFields?.[0]?.label?.trim() || null
 
     // Subtitle für Kartenanzeige:
@@ -166,8 +168,6 @@ export function parsePkpass(buffer) {
 
     const barcodes = p.barcodes || (p.barcode ? [p.barcode] : [])
     const barcodeValue = barcodes[0]?.message || null
-    const isBoardingPass = passType === "boardingPass"
-
     // Datum für Nicht-Boarding-Pässe:
     // Suche in headerFields, auxiliaryFields, relevantDate, expirationDate
     let eventDate = null
