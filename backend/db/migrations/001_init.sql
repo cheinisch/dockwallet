@@ -112,4 +112,4 @@ CREATE TRIGGER passes_updated_at
 -- E-Mail:   admin@local
 -- Password: changeme
 INSERT INTO users (username, email, password_hash, is_admin, is_active)
-VALUES ('changeme', 'admin@local', '$2b$10$Zwdl6A.tFiMwvXw9ZUHHwO5PaKy3GLqkK0aL3.Ll9FVW4AhgAclrW', TRUE, TRUE);
+VALUES ('admin', 'admin@local', '$2b$10$Zwdl6A.tFiMwvXw9ZUHHwO5PaKy3GLqkK0aL3.Ll9FVW4AhgAclrW', TRUE, TRUE);
