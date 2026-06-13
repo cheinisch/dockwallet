@@ -19,7 +19,8 @@
     "otplib": "^12.0.1",
     "qrcode": "^1.5.3",
     "@simplewebauthn/server": "^9.0.3",
-    "crypto": "^1.0.1"
+    "crypto": "^1.0.1",
+    "adm-zip": "^0.5.12"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
