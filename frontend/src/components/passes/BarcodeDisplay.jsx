@@ -1,86 +1,109 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 
 /**
- * Rendert einen Barcode aus pass.json-Daten.
+ * Rendert einen Barcode.
  * QR / Aztec  → echter QR-Code via qrcode-CDN
  * PDF417 / Code128 / andere → SVG-Balken
  *
  * Props:
- *   value  – Barcode-Nachricht (String)
- *   raw    – pass.raw_data (Objekt oder JSON-String)
+ *   value   – Barcode-Nachricht (maschinenlesbarer Wert)
+ *   altText – Anzeigetext (z.B. Buchungscode, aus pkpass altText)
+ *   raw     – pass.raw_data (Objekt oder JSON-String, für Format-Erkennung)
  */
-export default function BarcodeDisplay({ value, raw }) {
+export default function BarcodeDisplay({ value, altText, raw }) {
   const canvasRef = useRef(null)
-  const [error, setError] = useState(null)
-  const [rendered, setRendered] = useState(false)
+  const [status, setStatus] = useState("loading") // loading | done | error
+  const [errorMsg, setErrorMsg] = useState(null)
 
-  // raw_data kann als String aus der DB kommen → parsen
-  const rawObj = typeof raw === "string" ? (() => { try { return JSON.parse(raw) } catch { return null } })() : raw
+  // raw_data kann als String aus der DB kommen
+  const rawObj = typeof raw === "string"
+    ? (() => { try { return JSON.parse(raw) } catch { return null } })()
+    : raw
 
-  const format   = rawObj?.barcodes?.[0]?.format || rawObj?.barcode?.format || "PKBarcodeFormatQR"
+  const barcodeData = rawObj?.barcodes?.[0] || rawObj?.barcode || null
+  const format   = barcodeData?.format || "PKBarcodeFormatQR"
+  const displayText = altText || barcodeData?.altText || value || ""
   const isQR     = format === "PKBarcodeFormatQR"
   const isAztec  = format === "PKBarcodeFormatAztec"
   const isPDF417 = format === "PKBarcodeFormatPDF417"
 
-  useEffect(() => {
-    if (!value || (!isQR && !isAztec)) return
-    setRendered(false)
-    setError(null)
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const loadAndRender = async () => {
-      try {
-        if (!window.QRCode) {
-          await new Promise((res, rej) => {
-            const s = document.createElement("script")
-            s.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"
-            s.onload = res; s.onerror = rej
-            document.head.appendChild(s)
-          })
-        }
-        await window.QRCode.toCanvas(canvas, value, {
-          width: 180,
-          margin: 2,
-          color: { dark: "#1e293b", light: "#ffffff" },
-          errorCorrectionLevel: "M",
-          scale: 4,
+  const renderQR = useCallback(async (canvas) => {
+    try {
+      if (!window.QRCode) {
+        await new Promise((res, rej) => {
+          // Prüfen ob Script schon lädt
+          const existing = document.querySelector('script[src*="qrcode"]')
+          if (existing) {
+            existing.addEventListener("load", res)
+            existing.addEventListener("error", rej)
+            return
+          }
+          const s = document.createElement("script")
+          s.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"
+          s.onload = res
+          s.onerror = () => rej(new Error("QRCode-Bibliothek konnte nicht geladen werden"))
+          document.head.appendChild(s)
         })
-        setRendered(true)
-      } catch (e) {
-        setError(e.message)
       }
+      await window.QRCode.toCanvas(canvas, value, {
+        width: 200,
+        margin: 1,
+        color: { dark: "#0f172a", light: "#ffffff" },
+        errorCorrectionLevel: "M",
+      })
+      setStatus("done")
+    } catch (e) {
+      setErrorMsg(e.message)
+      setStatus("error")
     }
-    loadAndRender()
-  }, [value, isQR, isAztec])
+  }, [value])
+
+  useEffect(() => {
+    if (!value || (!isQR && !isAztec)) { setStatus("done"); return }
+    setStatus("loading")
+
+    // Canvas braucht einen Frame um im DOM zu sein
+    const timer = setTimeout(() => {
+      const canvas = canvasRef.current
+      if (canvas) renderQR(canvas)
+      else setStatus("error")
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [value, isQR, isAztec, renderQR])
 
   if (!value) return null
 
+  // ── QR / Aztec ──────────────────────────────────────────────────────────────
   if (isQR || isAztec) {
     return (
-      <div className="flex flex-col items-center gap-2">
-        <div className="relative rounded-xl overflow-hidden border border-slate-200"
-             style={{ width: 188, height: 188, background: "#ffffff", padding: 4 }}>
-          {!rendered && !error && (
+      <div className="flex flex-col items-center gap-2 w-full">
+        <div className="relative rounded-xl overflow-hidden"
+          style={{ width: 208, height: 208, background: "#ffffff", padding: 4, border: "1px solid #e2e8f0" }}>
+          {status === "loading" && (
             <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
-              <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
             </div>
           )}
-          <canvas ref={canvasRef} className="block rounded-lg max-w-full" />
+          {status === "error" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white z-10 gap-1 px-3 text-center">
+              <p className="text-xs text-red-500">QR-Code konnte nicht gerendert werden</p>
+              {errorMsg && <p className="text-[10px] text-slate-400">{errorMsg}</p>}
+            </div>
+          )}
+          <canvas ref={canvasRef} className="block rounded-lg" style={{ maxWidth: "100%" }} />
         </div>
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        <span className="text-[10px] font-mono text-slate-500 tracking-wider text-center break-all max-w-[200px]">
-          {value.length > 40 ? value.slice(0, 40) + "…" : value}
+        {/* Anzeigetext: altText bevorzugt (z.B. NCW5JD), nicht der rohe Barcode-Wert */}
+        <span className="text-sm font-mono font-semibold text-slate-600 tracking-widest">
+          {displayText}
         </span>
-        <span className="text-[9px] text-slate-600 uppercase tracking-widest">
+        <span className="text-[9px] text-slate-400 uppercase tracking-widest">
           {format.replace("PKBarcodeFormat", "")}
         </span>
       </div>
     )
   }
 
-  // PDF417 / Code128 / andere → SVG-Balken
+  // ── PDF417 / Code128 / andere → SVG-Balken ──────────────────────────────────
   const bars = []
   let x = 4
   const seed = value.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
@@ -88,23 +111,23 @@ export default function BarcodeDisplay({ value, raw }) {
     const ch  = value.charCodeAt(i)
     const w   = (ch % 3) + 1
     const gap = ((ch ^ (seed >> 2)) % 3) + 1
-    bars.push(<rect key={i} x={x} y={4} width={w} height={isPDF417 ? 48 : 56} fill="#1e293b" rx={0.5} />)
+    bars.push(<rect key={i} x={x} y={4} width={w} height={isPDF417 ? 48 : 56} fill="#0f172a" rx={0.5} />)
     x += w + gap
   }
-
   const h = isPDF417 ? 56 : 64
+
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="bg-white rounded-lg p-2">
-        <svg width="260" height={h} viewBox={`0 0 260 ${h}`}>
+    <div className="flex flex-col items-center gap-2 w-full">
+      <div className="bg-white rounded-xl p-3 w-full" style={{ border: "1px solid #e2e8f0" }}>
+        <svg width="100%" height={h} viewBox={`0 0 260 ${h}`} preserveAspectRatio="xMidYMid meet">
           <rect width="260" height={h} fill="white" />
           {bars}
         </svg>
       </div>
-      <span className="text-[10px] font-mono text-slate-500 tracking-wider text-center break-all max-w-[260px]">
-        {value.length > 40 ? value.slice(0, 40) + "…" : value}
+      <span className="text-sm font-mono font-semibold text-slate-600 tracking-widest">
+        {displayText}
       </span>
-      <span className="text-[9px] text-slate-600 uppercase tracking-widest">
+      <span className="text-[9px] text-slate-400 uppercase tracking-widest">
         {format.replace("PKBarcodeFormat", "")}
       </span>
     </div>

@@ -87,7 +87,7 @@ function BoardingPassCard({ pass, isVoided }) {
       {pass.barcode && (
         <div className="px-6 pb-6">
           <div className="w-full border-t border-slate-100 mb-4" />
-          <BarcodeDisplay value={pass.barcode} raw={pass.raw_data} />
+          <BarcodeDisplay value={pass.barcode} altText={pass.raw_data?.barcodes?.[0]?.altText || (typeof pass.raw_data === "string" ? null : pass.raw_data?.barcode?.altText)} raw={pass.raw_data} />
         </div>
       )}
     </div>
@@ -116,14 +116,31 @@ function GenericPassCard({ pass, isVoided }) {
   const textLbl = isLight ? "#6b7280" : lbl
   const divider = isLight ? "#e5e7eb" : fg + "33"
 
-  // Header-Felder (rechts oben)
-  const headerFields = (fields.header || []).filter(f => String(f.value || "").trim())
+  // Header-Felder (rechts oben) – manchmal ist das Datum im Label statt im Value
+  const headerFields = (fields.header || []).filter(f => String(f.value || "").trim() || String(f.label || "").trim())
+    .map(f => {
+      // Wenn value leer aber label hat Datum-Format → tauschen
+      const val = String(f.value || "").trim()
+      const lbl = String(f.label || "").trim()
+      const looksLikeDate = /\d{2}[.:]\d{2}/.test(lbl)
+      if (!val && looksLikeDate) return { ...f, label: null, value: lbl }
+      return f
+    })
 
-  // Primärtitel: primaryField Wert (oft Event-Name), oder description
+  // Primärtitel: primaryField Wert, aber wenn Label = Org-Name → nur Wert als Titel
   const primaryField = (fields.primary || []).find(f => String(f.value || "").trim())
-  const displayTitle = primaryField
-    ? String(primaryField.value).trim()
-    : pass.description || pass.logo_text || pass.airline || "–"
+  const primaryLabel = primaryField?.label || ""
+  const primaryValue2 = primaryField ? String(primaryField.value).trim() : null
+
+  // Wenn primaryField Label = Org-Name (wie beim Kino) → Label separat anzeigen
+  const orgName = pass.airline || (pass.logo_text?.trim() ? pass.logo_text : null)
+  const primaryLabelIsOrg = orgName && primaryLabel.toLowerCase().includes(orgName.toLowerCase().slice(0, 6))
+
+  const displayTitle = primaryValue2
+    || pass.description
+    || pass.logo_text?.trim()
+    || pass.airline
+    || "–"
 
   // Alle weiteren sichtbaren Felder
   const gridFields = [
@@ -153,7 +170,7 @@ function GenericPassCard({ pass, isVoided }) {
             <img src={thumbnail} alt="" className="w-10 h-10 rounded-xl object-cover" />
           ) : null}
           <p className="font-semibold text-base" style={{ color: textFg }}>
-            {pass.airline || pass.logo_text || pass.description || "–"}
+            {pass.airline || (pass.logo_text?.trim() ? pass.logo_text : null) || pass.description || "–"}
           </p>
           {headerFields.map((f, i) => (
             <div key={i} className="ml-auto text-right">
@@ -168,12 +185,16 @@ function GenericPassCard({ pass, isVoided }) {
 
         {/* Haupt-Titel */}
         <div className="px-5 pt-4 pb-2">
-          <p className="font-bold text-2xl leading-tight" style={{ color: textFg }}>{displayTitle}</p>
-          {primaryField?.label && (
-            <p className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: textLbl }}>
-              {primaryField.label}
+          {/* Wenn primaryLabel = Kino-/Org-Name → als Subtitle über dem Titel */}
+          {primaryField && primaryLabel && !primaryLabelIsOrg && (
+            <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: textLbl }}>
+              {primaryLabel}
             </p>
           )}
+          {primaryLabelIsOrg && primaryLabel && (
+            <p className="text-sm font-medium mb-1" style={{ color: textLbl }}>{primaryLabel}</p>
+          )}
+          <p className="font-bold text-2xl leading-tight" style={{ color: textFg }}>{displayTitle}</p>
         </div>
 
         {/* Felder Grid */}
@@ -198,7 +219,7 @@ function GenericPassCard({ pass, isVoided }) {
         {pass.barcode && (
           <div className="px-5 pb-0 pt-3 flex flex-col items-center">
             <div className="bg-white rounded-2xl px-4 py-4 w-full flex flex-col items-center">
-              <BarcodeDisplay value={pass.barcode} raw={raw} />
+              <BarcodeDisplay value={pass.barcode} altText={raw?.barcodes?.[0]?.altText || raw?.barcode?.altText} raw={raw} />
             </div>
           </div>
         )}
