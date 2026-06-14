@@ -24,8 +24,7 @@ The app is available at `http://localhost:8080`.
 
 ### First Login
 
-Username: `admin@local`
-Password: `changeme`
+Username: `admin@local` / Password: `changeme`
 
 ## Images
 
