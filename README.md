@@ -22,6 +22,11 @@ docker compose up -d
 
 The app is available at `http://localhost:8080`.
 
+### First Login
+
+Username: `admin@local`
+Password: `changeme`
+
 ## Images
 
 | Image | Description |
