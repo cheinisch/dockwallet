@@ -1,22 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import QRCode from "qrcode"
+import bwipjs from "bwip-js"
 
 /**
- * Rendert einen Barcode.
- * QR / Aztec  → echter QR-Code via qrcode npm-Paket (kein CDN)
- * PDF417 / Code128 / andere → SVG-Balken
+ * Rendert einen Barcode – alle Formate aus pkpass.
+ * QR / Aztec   → qrcode (npm)
+ * PDF417       → bwip-js (npm)
+ * Code128 etc. → bwip-js (npm)
  *
  * Props:
- *   value   – Barcode-Nachricht (maschinenlesbarer Wert)
- *   altText – Anzeigetext (z.B. Buchungscode NCW5JD)
- *   raw     – pass.raw_data (Objekt oder JSON-String, für Format-Erkennung)
+ *   value   – maschinenlesbarer Barcode-Wert
+ *   altText – Anzeigetext (z.B. NCW5JD, W000000002250861)
+ *   raw     – pass.raw_data für Format-Erkennung
  */
 export default function BarcodeDisplay({ value, altText, raw }) {
-  const canvasRef = useRef(null)
-  const [status, setStatus]     = useState("loading")
+  const canvasRef              = useRef(null)
+  const [status, setStatus]    = useState("loading")
   const [errorMsg, setErrorMsg] = useState(null)
 
-  // raw_data kann als String aus der DB kommen
   const rawObj = typeof raw === "string"
     ? (() => { try { return JSON.parse(raw) } catch { return null } })()
     : raw
@@ -24,9 +25,30 @@ export default function BarcodeDisplay({ value, altText, raw }) {
   const barcodeData = rawObj?.barcodes?.[0] || rawObj?.barcode || null
   const format      = barcodeData?.format || "PKBarcodeFormatQR"
   const displayText = altText || barcodeData?.altText || value || ""
-  const isQR        = format === "PKBarcodeFormatQR"
-  const isAztec     = format === "PKBarcodeFormatAztec"
-  const isPDF417    = format === "PKBarcodeFormatPDF417"
+
+  const isQR     = format === "PKBarcodeFormatQR"
+  const isAztec  = format === "PKBarcodeFormatAztec"
+  const isPDF417 = format === "PKBarcodeFormatPDF417"
+  const isCode128 = format === "PKBarcodeFormatCode128"
+
+  // bwip-js Barcode-Typ Mapping
+  const bwipType = isPDF417 ? "pdf417" : isCode128 ? "code128" : isAztec ? "azteccode" : null
+
+  const renderWithBwip = useCallback((canvas) => {
+    try {
+      bwipjs.toCanvas(canvas, {
+        bcid:        bwipType,
+        text:        value,
+        scale:       3,
+        height:      isPDF417 ? 20 : 10,
+        includetext: false,
+      })
+      setStatus("done")
+    } catch (e) {
+      setErrorMsg(e.message)
+      setStatus("error")
+    }
+  }, [value, bwipType, isPDF417])
 
   const renderQR = useCallback(async (canvas) => {
     try {
@@ -44,24 +66,28 @@ export default function BarcodeDisplay({ value, altText, raw }) {
   }, [value])
 
   useEffect(() => {
-    if (!value || (!isQR && !isAztec)) { setStatus("done"); return }
+    if (!value) { setStatus("done"); return }
     setStatus("loading")
+    setErrorMsg(null)
     const timer = setTimeout(() => {
       const canvas = canvasRef.current
-      if (canvas) renderQR(canvas)
-      else { setErrorMsg("Canvas nicht verfügbar"); setStatus("error") }
+      if (!canvas) { setErrorMsg("Canvas nicht verfügbar"); setStatus("error"); return }
+      if (isQR) renderQR(canvas)
+      else if (bwipType) renderWithBwip(canvas)
+      else setStatus("done")
     }, 50)
     return () => clearTimeout(timer)
-  }, [value, isQR, isAztec, renderQR])
+  }, [value, isQR, bwipType, renderQR, renderWithBwip])
 
   if (!value) return null
 
-  // ── QR / Aztec ──────────────────────────────────────────────────────────────
-  if (isQR || isAztec) {
-    return (
-      <div className="flex flex-col items-center gap-2 w-full">
-        <div className="relative rounded-xl overflow-hidden"
-          style={{ width: 208, height: 208, background: "#ffffff", padding: 4, border: "1px solid #e2e8f0" }}>
+  const needsCanvas = isQR || isAztec || isPDF417 || isCode128
+
+  return (
+    <div className="flex flex-col items-center gap-2 w-full">
+      {needsCanvas ? (
+        <div className="relative rounded-xl overflow-hidden w-full flex justify-center"
+          style={{ background: "#ffffff", padding: 8, border: "1px solid #e2e8f0", minHeight: 80 }}>
           {status === "loading" && (
             <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
               <div className="w-8 h-8 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
@@ -69,43 +95,19 @@ export default function BarcodeDisplay({ value, altText, raw }) {
           )}
           {status === "error" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white z-10 gap-1 px-3 text-center">
-              <p className="text-xs text-red-500">QR-Code konnte nicht gerendert werden</p>
+              <p className="text-xs text-red-500">Barcode konnte nicht gerendert werden</p>
               {errorMsg && <p className="text-[10px] text-slate-400">{errorMsg}</p>}
             </div>
           )}
-          <canvas ref={canvasRef} className="block rounded-lg" style={{ maxWidth: "100%" }} />
+          <canvas ref={canvasRef} className="block max-w-full" />
         </div>
-        <span className="text-sm font-mono font-semibold text-slate-600 tracking-widest">
-          {displayText}
-        </span>
-        <span className="text-[9px] text-slate-400 uppercase tracking-widest">
-          {format.replace("PKBarcodeFormat", "")}
-        </span>
-      </div>
-    )
-  }
+      ) : (
+        // Unbekanntes Format → Text-Fallback
+        <div className="bg-white rounded-xl p-4 w-full text-center border border-slate-200">
+          <p className="font-mono text-slate-700 text-sm break-all">{value}</p>
+        </div>
+      )}
 
-  // ── PDF417 / Code128 / andere → SVG-Balken ──────────────────────────────────
-  const bars = []
-  let x = 4
-  const seed = value.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
-  for (let i = 0; i < value.length && x < 252; i++) {
-    const ch  = value.charCodeAt(i)
-    const w   = (ch % 3) + 1
-    const gap = ((ch ^ (seed >> 2)) % 3) + 1
-    bars.push(<rect key={i} x={x} y={4} width={w} height={isPDF417 ? 48 : 56} fill="#0f172a" rx={0.5} />)
-    x += w + gap
-  }
-  const h = isPDF417 ? 56 : 64
-
-  return (
-    <div className="flex flex-col items-center gap-2 w-full">
-      <div className="bg-white rounded-xl p-3 w-full" style={{ border: "1px solid #e2e8f0" }}>
-        <svg width="100%" height={h} viewBox={`0 0 260 ${h}`} preserveAspectRatio="xMidYMid meet">
-          <rect width="260" height={h} fill="white" />
-          {bars}
-        </svg>
-      </div>
       <span className="text-sm font-mono font-semibold text-slate-600 tracking-widest">
         {displayText}
       </span>
