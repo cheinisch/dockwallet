@@ -4,8 +4,6 @@ import { useNavigate } from "react-router-dom"
 // Frontend-Version aus package.json (wird bei Build eingebettet)
 const FRONTEND_VERSION = __APP_VERSION__
 
-const DOCKERHUB_API = "https://hub.docker.com/v2/repositories"
-
 function authHeaders() {
   return { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` }
 }
@@ -62,9 +60,10 @@ function Toggle({ label, description, checked, onChange }) {
 
 // ─── System Status Widget ──────────────────────────────────────────────────────
 function SystemStatus() {
-  const [backend, setBackend]       = useState(null)  // null=loading, false=offline, obj=data
-  const [latestTag, setLatestTag]   = useState(null)
-  const [checking, setChecking]     = useState(false)
+  const [backend, setBackend]           = useState(null)
+  const [latestTag, setLatestTag]       = useState(null)
+  const [latestFrontend, setLatestFrontend] = useState(null)
+  const [checking, setChecking]         = useState(false)
 
   const checkBackend = useCallback(async () => {
     try {
@@ -78,19 +77,16 @@ function SystemStatus() {
 
   const checkDockerHub = useCallback(async () => {
     try {
-      // Neuestes Tag von Docker Hub holen
-      const res = await fetch(`${DOCKERHUB_API}/cheinisch/dockwallet-backend/tags?page_size=5&ordering=last_updated`,
-        { signal: AbortSignal.timeout(6000) })
+      const res = await fetch("/api/dockerhub/latest", {
+        headers: authHeaders(),
+        signal: AbortSignal.timeout(8000),
+      })
       if (!res.ok) return
       const data = await res.json()
-      // Tags filtern: nur semantische Versionen (v1.2.3 oder 1.2.3)
-      const versionTags = (data.results || [])
-        .map(t => t.name)
-        .filter(n => /^v?\d+\.\d+/.test(n))
-        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
-      if (versionTags[0]) setLatestTag(versionTags[0].replace(/^v/, ""))
+      if (data.backend)  setLatestTag(data.backend)
+      if (data.frontend) setLatestFrontend(data.frontend)
     } catch {
-      // Docker Hub nicht erreichbar – kein Problem
+      // nicht erreichbar – kein Problem
     }
   }, [])
 
@@ -103,6 +99,7 @@ function SystemStatus() {
     setChecking(true)
     setBackend(null)
     setLatestTag(null)
+    setLatestFrontend(null)
     await Promise.all([checkBackend(), checkDockerHub()])
     setChecking(false)
   }
@@ -110,9 +107,11 @@ function SystemStatus() {
   const backendVersion  = backend?.version || null
   const frontendVersion = FRONTEND_VERSION
 
-  const hasUpdate = latestTag && backendVersion &&
-    latestTag !== backendVersion &&
+  const hasBackendUpdate = latestTag && backendVersion &&
     latestTag.localeCompare(backendVersion, undefined, { numeric: true }) > 0
+  const hasFrontendUpdate = latestFrontend && frontendVersion &&
+    latestFrontend.localeCompare(frontendVersion, undefined, { numeric: true }) > 0
+  const hasUpdate = hasBackendUpdate || hasFrontendUpdate
 
   const uptimeStr = backend?.uptime != null
     ? backend.uptime < 60 ? `${backend.uptime}s`
@@ -140,13 +139,14 @@ function SystemStatus() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/>
           </svg>
           <div>
-            <p className="text-sm font-semibold text-sky-300">Update verfügbar: v{latestTag}</p>
-            <p className="text-xs text-sky-600 mt-0.5">
-              Aktuell läuft v{backendVersion}. Auf Docker Hub ist eine neue Version verfügbar.
-            </p>
+            <p className="text-sm font-semibold text-sky-300">Update verfügbar</p>
+            <div className="text-xs text-sky-600 mt-1 space-y-0.5">
+              {hasBackendUpdate  && <p>Backend:  v{backendVersion}  → v{latestTag}</p>}
+              {hasFrontendUpdate && <p>Frontend: v{frontendVersion} → v{latestFrontend}</p>}
+            </div>
             <a href="https://hub.docker.com/r/cheinisch/dockwallet-backend/tags"
               target="_blank" rel="noopener noreferrer"
-              className="text-xs text-sky-400 hover:text-sky-300 underline mt-1 inline-block">
+              className="text-xs text-sky-400 hover:text-sky-300 underline mt-1.5 inline-block">
               Docker Hub → Tags ansehen
             </a>
           </div>
@@ -157,11 +157,18 @@ function SystemStatus() {
         {/* Frontend */}
         <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-green-400" />
+            <div className={`w-2 h-2 rounded-full ${hasFrontendUpdate ? "bg-sky-400" : "bg-green-400"}`} />
             <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Frontend</p>
           </div>
           <p className="font-mono text-lg font-bold text-slate-100">v{frontendVersion}</p>
-          <p className="text-xs text-slate-600 mt-1">cheinisch/dockwallet-frontend</p>
+          <p className="text-xs mt-1">
+            {latestFrontend
+              ? hasFrontendUpdate
+                ? <span className="text-sky-400 font-medium">v{latestFrontend} verfügbar</span>
+                : <span className="text-green-500">Aktuell</span>
+              : <span className="text-slate-600">cheinisch/dockwallet-frontend</span>
+            }
+          </p>
         </div>
 
         {/* Backend */}
@@ -190,24 +197,27 @@ function SystemStatus() {
         {/* Neueste Version */}
         <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
           <div className="flex items-center gap-2 mb-2">
-            <div className={`w-2 h-2 rounded-full ${latestTag ? (hasUpdate ? "bg-sky-400" : "bg-green-400") : "bg-slate-600 animate-pulse"}`} />
+            <div className={`w-2 h-2 rounded-full ${
+              latestTag === null && latestFrontend === null ? "bg-slate-600 animate-pulse"
+              : hasUpdate ? "bg-sky-400"
+              : "bg-green-400"
+            }`} />
             <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Docker Hub</p>
           </div>
-          {!latestTag && <p className="text-slate-500 text-sm">Prüfe…</p>}
-          {latestTag && (
-            <>
-              <p className="font-mono text-lg font-bold text-slate-100">v{latestTag}</p>
-              <p className="text-xs mt-1">
-                {hasUpdate
-                  ? <span className="text-sky-400 font-medium">Update verfügbar</span>
-                  : <span className="text-green-500">Aktuell</span>
-                }
-              </p>
-            </>
-          )}
-          {latestTag === null && backend !== null && (
-            <p className="text-xs text-slate-600 mt-1">Docker Hub nicht erreichbar</p>
-          )}
+          {latestTag === null && latestFrontend === null
+            ? <p className="text-slate-500 text-sm">Prüfe…</p>
+            : <>
+                <p className="font-mono text-lg font-bold text-slate-100">
+                  v{latestTag || latestFrontend || "–"}
+                </p>
+                <p className="text-xs mt-1">
+                  {hasUpdate
+                    ? <span className="text-sky-400 font-medium">Update verfügbar</span>
+                    : <span className="text-green-500">Alles aktuell</span>
+                  }
+                </p>
+              </>
+          }
         </div>
       </div>
     </div>

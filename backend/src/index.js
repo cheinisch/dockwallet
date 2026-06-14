@@ -50,3 +50,32 @@ initDb()
     console.error("Startup fehlgeschlagen:", err)
     process.exit(1)
   })
+
+
+// Docker Hub Version-Check (proxied um CORS zu umgehen)
+app.get("/api/dockerhub/latest", async (req, res) => {
+  try {
+    const [backendRes, frontendRes] = await Promise.all([
+      fetch("https://hub.docker.com/v2/repositories/cheinisch/dockwallet-backend/tags?page_size=10&ordering=last_updated"),
+      fetch("https://hub.docker.com/v2/repositories/cheinisch/dockwallet-frontend/tags?page_size=10&ordering=last_updated"),
+    ])
+
+    const parseLatest = (data) => {
+      const tags = (data.results || [])
+        .map(t => t.name)
+        .filter(n => /^v?\d+\.\d+/.test(n))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      return tags[0]?.replace(/^v/, "") || null
+    }
+
+    const backendData  = backendRes.ok  ? await backendRes.json()  : {}
+    const frontendData = frontendRes.ok ? await frontendRes.json() : {}
+
+    res.json({
+      backend:  parseLatest(backendData),
+      frontend: parseLatest(frontendData),
+    })
+  } catch (err) {
+    res.status(503).json({ error: "Docker Hub nicht erreichbar", detail: err.message })
+  }
+})
