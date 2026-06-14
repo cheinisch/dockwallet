@@ -13,6 +13,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.2.2
 
+      - name: Append -dev to backend version
+        run: |
+          cd backend
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = pkg.version.replace(/-dev$/, '') + '-dev';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+            console.log('Backend version:', pkg.version);
+          "
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3.4.0
         with:
@@ -24,13 +35,24 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: cheinisch/dockwallet-backend:latest
+          tags: cheinisch/dockwallet-backend:dev
 
   build-frontend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2
+
+      - name: Append -dev to frontend version
+        run: |
+          cd frontend
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = pkg.version.replace(/-dev$/, '') + '-dev';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+            console.log('Frontend version:', pkg.version);
+          "
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3.4.0
@@ -43,4 +65,4 @@ jobs:
         with:
           context: ./frontend
           push: true
-          tags: cheinisch/dockwallet-frontend:latest
+          tags: cheinisch/dockwallet-frontend:dev
