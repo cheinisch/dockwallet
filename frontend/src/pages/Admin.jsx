@@ -1,5 +1,10 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
+
+// Frontend-Version aus package.json (wird bei Build eingebettet)
+const FRONTEND_VERSION = __APP_VERSION__
+
+const DOCKERHUB_API = "https://hub.docker.com/v2/repositories"
 
 function authHeaders() {
   return { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` }
@@ -55,23 +60,176 @@ function Toggle({ label, description, checked, onChange }) {
   )
 }
 
+// ─── System Status Widget ──────────────────────────────────────────────────────
+function SystemStatus() {
+  const [backend, setBackend]       = useState(null)  // null=loading, false=offline, obj=data
+  const [latestTag, setLatestTag]   = useState(null)
+  const [checking, setChecking]     = useState(false)
+
+  const checkBackend = useCallback(async () => {
+    try {
+      const res = await fetch("/api/version", { signal: AbortSignal.timeout(4000) })
+      if (!res.ok) throw new Error()
+      setBackend(await res.json())
+    } catch {
+      setBackend(false)
+    }
+  }, [])
+
+  const checkDockerHub = useCallback(async () => {
+    try {
+      // Neuestes Tag von Docker Hub holen
+      const res = await fetch(`${DOCKERHUB_API}/cheinisch/dockwallet-backend/tags?page_size=5&ordering=last_updated`,
+        { signal: AbortSignal.timeout(6000) })
+      if (!res.ok) return
+      const data = await res.json()
+      // Tags filtern: nur semantische Versionen (v1.2.3 oder 1.2.3)
+      const versionTags = (data.results || [])
+        .map(t => t.name)
+        .filter(n => /^v?\d+\.\d+/.test(n))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      if (versionTags[0]) setLatestTag(versionTags[0].replace(/^v/, ""))
+    } catch {
+      // Docker Hub nicht erreichbar – kein Problem
+    }
+  }, [])
+
+  useEffect(() => {
+    checkBackend()
+    checkDockerHub()
+  }, [checkBackend, checkDockerHub])
+
+  const handleRefresh = async () => {
+    setChecking(true)
+    setBackend(null)
+    setLatestTag(null)
+    await Promise.all([checkBackend(), checkDockerHub()])
+    setChecking(false)
+  }
+
+  const backendVersion  = backend?.version || null
+  const frontendVersion = FRONTEND_VERSION
+
+  const hasUpdate = latestTag && backendVersion &&
+    latestTag !== backendVersion &&
+    latestTag.localeCompare(backendVersion, undefined, { numeric: true }) > 0
+
+  const uptimeStr = backend?.uptime != null
+    ? backend.uptime < 60 ? `${backend.uptime}s`
+      : backend.uptime < 3600 ? `${Math.floor(backend.uptime / 60)}m`
+      : `${Math.floor(backend.uptime / 3600)}h ${Math.floor((backend.uptime % 3600) / 60)}m`
+    : null
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-slate-100">System</h2>
+        <button onClick={handleRefresh} disabled={checking}
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors disabled:opacity-50">
+          <svg className={`w-3.5 h-3.5 ${checking ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Aktualisieren
+        </button>
+      </div>
+
+      {/* Update-Banner */}
+      {hasUpdate && (
+        <div className="mb-4 flex items-start gap-3 bg-sky-950/60 border border-sky-800/50 rounded-xl px-4 py-3">
+          <svg className="w-4 h-4 text-sky-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-sky-300">Update verfügbar: v{latestTag}</p>
+            <p className="text-xs text-sky-600 mt-0.5">
+              Aktuell läuft v{backendVersion}. Auf Docker Hub ist eine neue Version verfügbar.
+            </p>
+            <a href="https://hub.docker.com/r/cheinisch/dockwallet-backend/tags"
+              target="_blank" rel="noopener noreferrer"
+              className="text-xs text-sky-400 hover:text-sky-300 underline mt-1 inline-block">
+              Docker Hub → Tags ansehen
+            </a>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Frontend */}
+        <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-green-400" />
+            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Frontend</p>
+          </div>
+          <p className="font-mono text-lg font-bold text-slate-100">v{frontendVersion}</p>
+          <p className="text-xs text-slate-600 mt-1">cheinisch/dockwallet-frontend</p>
+        </div>
+
+        {/* Backend */}
+        <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-2 h-2 rounded-full ${backend === null ? "bg-slate-600 animate-pulse" : backend === false ? "bg-red-400" : "bg-green-400"}`} />
+            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Backend</p>
+          </div>
+          {backend === null && <p className="text-slate-500 text-sm">Prüfe…</p>}
+          {backend === false && (
+            <>
+              <p className="font-bold text-red-400 text-sm">Offline</p>
+              <p className="text-xs text-slate-600 mt-1">API nicht erreichbar</p>
+            </>
+          )}
+          {backend && (
+            <>
+              <p className="font-mono text-lg font-bold text-slate-100">v{backend.version}</p>
+              <p className="text-xs text-slate-600 mt-1">
+                {backend.nodeVersion} · Uptime {uptimeStr}
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Neueste Version */}
+        <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-2 h-2 rounded-full ${latestTag ? (hasUpdate ? "bg-sky-400" : "bg-green-400") : "bg-slate-600 animate-pulse"}`} />
+            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Docker Hub</p>
+          </div>
+          {!latestTag && <p className="text-slate-500 text-sm">Prüfe…</p>}
+          {latestTag && (
+            <>
+              <p className="font-mono text-lg font-bold text-slate-100">v{latestTag}</p>
+              <p className="text-xs mt-1">
+                {hasUpdate
+                  ? <span className="text-sky-400 font-medium">Update verfügbar</span>
+                  : <span className="text-green-500">Aktuell</span>
+                }
+              </p>
+            </>
+          )}
+          {latestTag === null && backend !== null && (
+            <p className="text-xs text-slate-600 mt-1">Docker Hub nicht erreichbar</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── User Table ───────────────────────────────────────────────────────────────
 const emptyForm = { username: "", first_name: "", last_name: "", email: "", password: "", is_admin: false, is_active: true }
 
 export default function Admin() {
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState("")
-  const [modal, setModal] = useState(null) // null | "create" | "edit" | "password" | "delete"
+  const [users, setUsers]       = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [search, setSearch]     = useState("")
+  const [modal, setModal]       = useState(null)
   const [selected, setSelected] = useState(null)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm]         = useState(emptyForm)
   const [newPassword, setNewPassword] = useState("")
-  const [msg, setMsg] = useState({ type: "", text: "" })
-  const [saving, setSaving] = useState(false)
+  const [msg, setMsg]           = useState({ type: "", text: "" })
+  const [saving, setSaving]     = useState(false)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    fetchUsers()
-  }, [])
+  useEffect(() => { fetchUsers() }, [])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -88,100 +246,54 @@ export default function Admin() {
     setTimeout(() => setMsg({ type: "", text: "" }), 4000)
   }
 
-  const openCreate = () => {
-    setForm(emptyForm)
-    setModal("create")
-  }
-
-  const openEdit = (user) => {
-    setSelected(user)
-    setForm({
-      username: user.username || "",
-      first_name: user.first_name || "",
-      last_name: user.last_name || "",
-      email: user.email || "",
-      password: "",
-      is_admin: user.is_admin,
-      is_active: user.is_active,
-    })
-    setModal("edit")
-  }
-
-  const openPassword = (user) => {
-    setSelected(user)
-    setNewPassword("")
-    setModal("password")
-  }
-
-  const openDelete = (user) => {
-    setSelected(user)
-    setModal("delete")
-  }
-
-  const closeModal = () => {
-    setModal(null)
-    setSelected(null)
-  }
+  const openCreate   = () => { setForm(emptyForm); setModal("create") }
+  const openEdit     = (u) => { setSelected(u); setForm({ username: u.username || "", first_name: u.first_name || "", last_name: u.last_name || "", email: u.email || "", password: "", is_admin: u.is_admin, is_active: u.is_active }); setModal("edit") }
+  const openPassword = (u) => { setSelected(u); setNewPassword(""); setModal("password") }
+  const openDelete   = (u) => { setSelected(u); setModal("delete") }
+  const closeModal   = () => { setModal(null); setSelected(null) }
 
   const handleCreate = async () => {
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/users", {
-        method: "POST", headers: authHeaders(), body: JSON.stringify(form),
-      })
+      const res = await fetch("/api/admin/users", { method: "POST", headers: authHeaders(), body: JSON.stringify(form) })
       const data = await res.json()
       if (!res.ok) { showMsg("error", data.error); return }
-      showMsg("success", "User angelegt")
-      closeModal()
-      fetchUsers()
-    } catch { showMsg("error", "Serverfehler") }
-    finally { setSaving(false) }
+      showMsg("success", "User angelegt"); closeModal(); fetchUsers()
+    } catch { showMsg("error", "Serverfehler") } finally { setSaving(false) }
   }
 
   const handleEdit = async () => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/admin/users/${selected.id}`, {
-        method: "PUT", headers: authHeaders(), body: JSON.stringify(form),
-      })
+      const res = await fetch(`/api/admin/users/${selected.id}`, { method: "PUT", headers: authHeaders(), body: JSON.stringify(form) })
       const data = await res.json()
       if (!res.ok) { showMsg("error", data.error); return }
-      showMsg("success", "User gespeichert")
-      closeModal()
-      fetchUsers()
-    } catch { showMsg("error", "Serverfehler") }
-    finally { setSaving(false) }
+      showMsg("success", "User gespeichert"); closeModal(); fetchUsers()
+    } catch { showMsg("error", "Serverfehler") } finally { setSaving(false) }
   }
 
   const handleResetPassword = async () => {
-    if (!newPassword || newPassword.length < 8) {
-      showMsg("error", "Passwort muss mindestens 8 Zeichen lang sein")
-      return
-    }
+    if (!newPassword || newPassword.length < 8) { showMsg("error", "Passwort muss mindestens 8 Zeichen lang sein"); return }
     setSaving(true)
     try {
-      const res = await fetch(`/api/admin/users/${selected.id}/reset-password`, {
-        method: "POST", headers: authHeaders(), body: JSON.stringify({ password: newPassword }),
-      })
+      const res = await fetch(`/api/admin/users/${selected.id}/reset-password`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ password: newPassword }) })
       const data = await res.json()
       if (!res.ok) { showMsg("error", data.error); return }
-      showMsg("success", "Passwort zurückgesetzt")
-      closeModal()
-    } catch { showMsg("error", "Serverfehler") }
-    finally { setSaving(false) }
+      showMsg("success", "Passwort zurückgesetzt"); closeModal()
+    } catch { showMsg("error", "Serverfehler") } finally { setSaving(false) }
   }
 
-  const handleResetMfa = async (user) => {
-    if (!confirm(`MFA für ${user.username} zurücksetzen?`)) return
-    const res = await fetch(`/api/admin/users/${user.id}/reset-mfa`, { method: "POST", headers: authHeaders() })
+  const handleResetMfa = async (u) => {
+    if (!confirm(`MFA für ${u.username} zurücksetzen?`)) return
+    const res = await fetch(`/api/admin/users/${u.id}/reset-mfa`, { method: "POST", headers: authHeaders() })
     const data = await res.json()
     showMsg(res.ok ? "success" : "error", data.message || data.error)
     fetchUsers()
   }
 
-  const handleDeletePasskeys = async (user) => {
-    if (!confirm(`Alle Passkeys von ${user.username} löschen?`)) return
-    const res = await fetch(`/api/admin/users/${user.id}/passkeys`, { method: "DELETE", headers: authHeaders() })
+  const handleDeletePasskeys = async (u) => {
+    if (!confirm(`Alle Passkeys von ${u.username} löschen?`)) return
+    const res = await fetch(`/api/admin/users/${u.id}/passkeys`, { method: "DELETE", headers: authHeaders() })
     const data = await res.json()
     showMsg(res.ok ? "success" : "error", data.message || data.error)
     fetchUsers()
@@ -193,23 +305,22 @@ export default function Admin() {
       const res = await fetch(`/api/admin/users/${selected.id}`, { method: "DELETE", headers: authHeaders() })
       const data = await res.json()
       if (!res.ok) { showMsg("error", data.error); return }
-      showMsg("success", "User gelöscht")
-      closeModal()
-      fetchUsers()
-    } catch { showMsg("error", "Serverfehler") }
-    finally { setSaving(false) }
+      showMsg("success", "User gelöscht"); closeModal(); fetchUsers()
+    } catch { showMsg("error", "Serverfehler") } finally { setSaving(false) }
   }
 
   const filtered = users.filter((u) =>
-    [u.username, u.email, u.first_name, u.last_name].some((v) =>
-      v?.toLowerCase().includes(search.toLowerCase())
-    )
+    [u.username, u.email, u.first_name, u.last_name].some((v) => v?.toLowerCase().includes(search.toLowerCase()))
   )
-
   const f = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
+
+      {/* System Status */}
+      <SystemStatus />
+
+      {/* User Management */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-slate-100">Benutzerverwaltung</h1>
         <button onClick={openCreate}
@@ -279,30 +390,11 @@ export default function Admin() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => openEdit(user)}
-                          className="text-xs text-slate-400 hover:text-slate-100 px-2 py-1 rounded hover:bg-slate-700 transition-colors">
-                          Bearbeiten
-                        </button>
-                        <button onClick={() => openPassword(user)}
-                          className="text-xs text-slate-400 hover:text-slate-100 px-2 py-1 rounded hover:bg-slate-700 transition-colors">
-                          Passwort
-                        </button>
-                        {user.mfa_enabled && (
-                          <button onClick={() => handleResetMfa(user)}
-                            className="text-xs text-yellow-500 hover:text-yellow-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors">
-                            MFA reset
-                          </button>
-                        )}
-                        {user.passkey_count > 0 && (
-                          <button onClick={() => handleDeletePasskeys(user)}
-                            className="text-xs text-yellow-500 hover:text-yellow-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors">
-                            Passkeys
-                          </button>
-                        )}
-                        <button onClick={() => openDelete(user)}
-                          className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-slate-700 transition-colors">
-                          Löschen
-                        </button>
+                        <button onClick={() => openEdit(user)} className="text-xs text-slate-400 hover:text-slate-100 px-2 py-1 rounded hover:bg-slate-700 transition-colors">Bearbeiten</button>
+                        <button onClick={() => openPassword(user)} className="text-xs text-slate-400 hover:text-slate-100 px-2 py-1 rounded hover:bg-slate-700 transition-colors">Passwort</button>
+                        {user.mfa_enabled && <button onClick={() => handleResetMfa(user)} className="text-xs text-yellow-500 hover:text-yellow-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors">MFA reset</button>}
+                        {user.passkey_count > 0 && <button onClick={() => handleDeletePasskeys(user)} className="text-xs text-yellow-500 hover:text-yellow-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors">Passkeys</button>}
+                        <button onClick={() => openDelete(user)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-slate-700 transition-colors">Löschen</button>
                       </div>
                     </td>
                   </tr>
@@ -313,7 +405,6 @@ export default function Admin() {
         )}
       </div>
 
-      {/* User anlegen */}
       {modal === "create" && (
         <Modal title="User anlegen" onClose={closeModal}>
           <div className="space-y-4">
@@ -329,74 +420,57 @@ export default function Admin() {
               <Toggle label="Admin" description="Zugriff auf das Admin-Dashboard" checked={form.is_admin} onChange={(v) => setForm({ ...form, is_admin: v })} />
             </div>
             <div className="flex gap-2 pt-2">
-              <button onClick={handleCreate} disabled={saving}
-                className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold text-sm px-5 py-2 rounded-lg transition-all">
-                {saving ? "Anlegen..." : "Anlegen"}
-              </button>
-              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2 transition-colors">Abbrechen</button>
+              <button onClick={handleCreate} disabled={saving} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold text-sm px-5 py-2 rounded-lg">{saving ? "Anlegen..." : "Anlegen"}</button>
+              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2">Abbrechen</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* User bearbeiten */}
       {modal === "edit" && selected && (
         <Modal title={`User bearbeiten – ${selected.username}`} onClose={closeModal}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Benutzername *" value={form.username} onChange={f("username")} placeholder="maxmustermann" />
-              <Input label="E-Mail *" type="email" value={form.email} onChange={f("email")} placeholder="user@example.com" />
-              <Input label="Vorname" value={form.first_name} onChange={f("first_name")} placeholder="Max" />
-              <Input label="Nachname" value={form.last_name} onChange={f("last_name")} placeholder="Mustermann" />
+              <Input label="Benutzername *" value={form.username} onChange={f("username")} />
+              <Input label="E-Mail *" type="email" value={form.email} onChange={f("email")} />
+              <Input label="Vorname" value={form.first_name} onChange={f("first_name")} />
+              <Input label="Nachname" value={form.last_name} onChange={f("last_name")} />
             </div>
             <div className="space-y-3 pt-1">
               <Toggle label="Aktiv" checked={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} />
               <Toggle label="Admin" checked={form.is_admin} onChange={(v) => setForm({ ...form, is_admin: v })} />
             </div>
             <div className="flex gap-2 pt-2">
-              <button onClick={handleEdit} disabled={saving}
-                className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold text-sm px-5 py-2 rounded-lg transition-all">
-                {saving ? "Speichern..." : "Speichern"}
-              </button>
-              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2 transition-colors">Abbrechen</button>
+              <button onClick={handleEdit} disabled={saving} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold text-sm px-5 py-2 rounded-lg">{saving ? "Speichern..." : "Speichern"}</button>
+              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2">Abbrechen</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Passwort zurücksetzen */}
       {modal === "password" && selected && (
         <Modal title={`Passwort – ${selected.username}`} onClose={closeModal}>
           <div className="space-y-4">
-            <Input label="Neues Passwort" type="password" value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)} placeholder="Mindestens 8 Zeichen" />
+            <Input label="Neues Passwort" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mindestens 8 Zeichen" />
             <div className="flex gap-2 pt-2">
-              <button onClick={handleResetPassword} disabled={saving}
-                className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold text-sm px-5 py-2 rounded-lg transition-all">
-                {saving ? "Speichern..." : "Zurücksetzen"}
-              </button>
-              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2 transition-colors">Abbrechen</button>
+              <button onClick={handleResetPassword} disabled={saving} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold text-sm px-5 py-2 rounded-lg">{saving ? "Speichern..." : "Zurücksetzen"}</button>
+              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2">Abbrechen</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* User löschen */}
       {modal === "delete" && selected && (
         <Modal title="User löschen" onClose={closeModal}>
           <div className="space-y-4">
             <div className="bg-red-950 border border-red-900 rounded-lg px-4 py-3">
               <p className="text-sm text-red-300">
-                <span className="font-semibold">{selected.username}</span> wird unwiderruflich gelöscht –
-                inklusive aller Boarding Passes ({selected.pass_count}).
+                <span className="font-semibold">{selected.username}</span> wird unwiderruflich gelöscht – inklusive aller Boarding Passes ({selected.pass_count}).
               </p>
             </div>
             <div className="flex gap-2">
-              <button onClick={handleDelete} disabled={saving}
-                className="bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold text-sm px-5 py-2 rounded-lg transition-all">
-                {saving ? "Löschen..." : "Endgültig löschen"}
-              </button>
-              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2 transition-colors">Abbrechen</button>
+              <button onClick={handleDelete} disabled={saving} className="bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold text-sm px-5 py-2 rounded-lg">{saving ? "Löschen..." : "Endgültig löschen"}</button>
+              <button onClick={closeModal} className="text-sm text-slate-500 hover:text-slate-300 px-4 py-2">Abbrechen</button>
             </div>
           </div>
         </Modal>
