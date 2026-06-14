@@ -1,6 +1,6 @@
 {
   "name": "dockwallet-frontend",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "DockWallet - Self-hosted boarding pass manager (Frontend)",
   "type": "module",
   "scripts": {
