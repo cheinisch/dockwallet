@@ -1,7 +1,8 @@
 # DockWallet
 
 [![GitHub Release](https://img.shields.io/github/v/release/cheinisch/dockwallet?label=version&color=blue)](https://github.com/cheinisch/dockwallet/releases)
-[![Docker Image](https://img.shields.io/docker/v/cheinisch/dockwallet?label=docker&logo=docker&color=2496ED)](https://hub.docker.com/r/cheinisch/dockwallet)
+[![Docker Image](https://img.shields.io/docker/v/cheinisch/dockwallet-frontend?label=docker&logo=docker&color=2496ED)](https://hub.docker.com/r/cheinisch/dockwallet-frontend)
+[![Docker Image Backend](https://img.shields.io/docker/v/cheinisch/dockwallet-backend?label=docker&logo=docker&color=2496ED)](https://hub.docker.com/r/cheinisch/dockwallet-backend)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cheinisch/dockwallet/cicd.yml?label=build&logo=github)](https://github.com/cheinisch/dockwallet/actions)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-green)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-docs.dockwallet.app-informational)](https://docs.dockwallet.app)
