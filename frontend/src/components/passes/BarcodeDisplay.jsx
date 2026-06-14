@@ -1,18 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+import QRCode from "qrcode"
 
 /**
  * Rendert einen Barcode.
- * QR / Aztec  → echter QR-Code via qrcode-CDN
+ * QR / Aztec  → echter QR-Code via qrcode npm-Paket (kein CDN)
  * PDF417 / Code128 / andere → SVG-Balken
  *
  * Props:
  *   value   – Barcode-Nachricht (maschinenlesbarer Wert)
- *   altText – Anzeigetext (z.B. Buchungscode, aus pkpass altText)
+ *   altText – Anzeigetext (z.B. Buchungscode NCW5JD)
  *   raw     – pass.raw_data (Objekt oder JSON-String, für Format-Erkennung)
  */
 export default function BarcodeDisplay({ value, altText, raw }) {
   const canvasRef = useRef(null)
-  const [status, setStatus] = useState("loading") // loading | done | error
+  const [status, setStatus]     = useState("loading")
   const [errorMsg, setErrorMsg] = useState(null)
 
   // raw_data kann als String aus der DB kommen
@@ -21,31 +22,15 @@ export default function BarcodeDisplay({ value, altText, raw }) {
     : raw
 
   const barcodeData = rawObj?.barcodes?.[0] || rawObj?.barcode || null
-  const format   = barcodeData?.format || "PKBarcodeFormatQR"
+  const format      = barcodeData?.format || "PKBarcodeFormatQR"
   const displayText = altText || barcodeData?.altText || value || ""
-  const isQR     = format === "PKBarcodeFormatQR"
-  const isAztec  = format === "PKBarcodeFormatAztec"
-  const isPDF417 = format === "PKBarcodeFormatPDF417"
+  const isQR        = format === "PKBarcodeFormatQR"
+  const isAztec     = format === "PKBarcodeFormatAztec"
+  const isPDF417    = format === "PKBarcodeFormatPDF417"
 
   const renderQR = useCallback(async (canvas) => {
     try {
-      if (!window.QRCode) {
-        await new Promise((res, rej) => {
-          // Prüfen ob Script schon lädt
-          const existing = document.querySelector('script[src*="qrcode"]')
-          if (existing) {
-            existing.addEventListener("load", res)
-            existing.addEventListener("error", rej)
-            return
-          }
-          const s = document.createElement("script")
-          s.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"
-          s.onload = res
-          s.onerror = () => rej(new Error("QRCode-Bibliothek konnte nicht geladen werden"))
-          document.head.appendChild(s)
-        })
-      }
-      await window.QRCode.toCanvas(canvas, value, {
+      await QRCode.toCanvas(canvas, value, {
         width: 200,
         margin: 1,
         color: { dark: "#0f172a", light: "#ffffff" },
@@ -61,12 +46,10 @@ export default function BarcodeDisplay({ value, altText, raw }) {
   useEffect(() => {
     if (!value || (!isQR && !isAztec)) { setStatus("done"); return }
     setStatus("loading")
-
-    // Canvas braucht einen Frame um im DOM zu sein
     const timer = setTimeout(() => {
       const canvas = canvasRef.current
       if (canvas) renderQR(canvas)
-      else setStatus("error")
+      else { setErrorMsg("Canvas nicht verfügbar"); setStatus("error") }
     }, 50)
     return () => clearTimeout(timer)
   }, [value, isQR, isAztec, renderQR])
@@ -92,7 +75,6 @@ export default function BarcodeDisplay({ value, altText, raw }) {
           )}
           <canvas ref={canvasRef} className="block rounded-lg" style={{ maxWidth: "100%" }} />
         </div>
-        {/* Anzeigetext: altText bevorzugt (z.B. NCW5JD), nicht der rohe Barcode-Wert */}
         <span className="text-sm font-mono font-semibold text-slate-600 tracking-widest">
           {displayText}
         </span>
