@@ -3,10 +3,12 @@ import { fmtDate, fmtTime } from "./passUtils.jsx"
 /**
  * Kompakte Ticket-Karte für die Rasteransicht.
  * Props:
- *   pass    – Pass-Objekt aus der API
- *   onClick – Callback beim Klick
+ *   pass          – Pass-Objekt aus der API
+ *   onClick       – Callback beim Klick auf die Karte
+ *   onFavorite    – Callback beim Klick auf den Stern (pass, newValue)
+ *   favoriteLoading – Boolean, ob Favorit gerade gespeichert wird
  */
-export default function PassGridCard({ pass, onClick }) {
+export default function PassGridCard({ pass, onClick, onFavorite, favoriteLoading }) {
   const isPast   = pass.departure_time && new Date(pass.departure_time) < new Date()
   const raw      = pass.raw_data
     ? (typeof pass.raw_data === "string"
@@ -22,21 +24,31 @@ export default function PassGridCard({ pass, onClick }) {
   const hasColor = !!bg
   const isLight  = bg === "#ffffff" || bg === "#ffffffff"
 
-  // Textfarben abhängig vom Hintergrund
   const textFg  = isLight ? "#111827" : (fg || (hasColor ? "#ffffff" : "#0f172a"))
   const textLbl = isLight ? "#6b7280" : (lbl ? lbl + "aa" : (hasColor ? "rgba(255,255,255,0.6)" : "#64748b"))
   const dividerColor = isLight ? "#e5e7eb" : (fg ? fg + "44" : (hasColor ? "rgba(255,255,255,0.2)" : "#e2e8f0"))
   const holeColor = isLight ? "#0f172a" : "var(--color-slate-950, #020617)"
 
-  // Titel: für Boarding Pass = Origin/Dest, für andere = primary-Wert oder logo_text
   const isBoardingPass = !!(pass.origin || pass.destination)
 
-  // Subtitle: nur anzeigen wenn er sich vom Titel unterscheidet und nicht doppelt ist
   const title = isBoardingPass
     ? null
     : (pass.passenger_name || pass.logo_text?.trim() || pass.description || pass.airline || "–")
 
   const subtitle = pass.subtitle && pass.subtitle !== title ? pass.subtitle : null
+
+  const isFav = pass.is_favorite
+
+  const handleFavoriteClick = (e) => {
+    e.stopPropagation()
+    if (!favoriteLoading && onFavorite) {
+      onFavorite(pass, !isFav)
+    }
+  }
+
+  // Sternfarbe: auf hellem Hintergrund gold/grau, auf dunklem weiß/transparent
+  const starActiveColor = isLight ? "#f59e0b" : "#fbbf24"
+  const starInactiveColor = isLight ? "#d1d5db" : "rgba(255,255,255,0.25)"
 
   return (
     <button
@@ -52,6 +64,30 @@ export default function PassGridCard({ pass, onClick }) {
         </div>
       )}
 
+      {/* Favorit-Button (Stern) */}
+      {!isVoided && (
+        <button
+          onClick={handleFavoriteClick}
+          aria-label={isFav ? "Favorit entfernen" : "Als Favorit markieren"}
+          className={`absolute top-2 right-2 z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-150
+            ${favoriteLoading ? "opacity-50 cursor-wait" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}
+            ${isFav ? "!opacity-100" : ""}`}
+          style={{ backgroundColor: isLight ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.25)" }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="w-4 h-4 transition-transform duration-150 active:scale-125"
+            fill={isFav ? starActiveColor : "none"}
+            stroke={isFav ? starActiveColor : starInactiveColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        </button>
+      )}
+
       <div
         style={hasColor ? { backgroundColor: bg } : {}}
         className={hasColor ? "" : "bg-white"}
@@ -64,7 +100,6 @@ export default function PassGridCard({ pass, onClick }) {
 
         <div className="px-4 pt-3 pb-0">
           {isBoardingPass ? (
-            /* ── Boarding Pass: IATA-Route ── */
             <div className="flex items-center gap-2 mb-2">
               <span className="font-mono font-black text-[28px] leading-none tracking-tighter" style={{ color: textFg }}>
                 {pass.origin || "???"}
@@ -80,7 +115,6 @@ export default function PassGridCard({ pass, onClick }) {
               </span>
             </div>
           ) : (
-            /* ── Generischer Pass: Titel + Subtitle ── */
             <div className="mb-3">
               <p className="font-bold text-lg leading-tight" style={{ color: textFg }}>
                 {title}
@@ -93,7 +127,6 @@ export default function PassGridCard({ pass, onClick }) {
             </div>
           )}
 
-          {/* Airline / Flugnummer / Sitz (nur Boarding Pass) */}
           {isBoardingPass && (
             <div className="flex items-end justify-between mb-3">
               <div>
@@ -132,7 +165,6 @@ export default function PassGridCard({ pass, onClick }) {
                   ? (() => { try { return JSON.parse(pass.raw_data) } catch { return null } })()
                   : pass.raw_data)
               : null
-            // Fallback: lesbares Datum aus headerField
             const headerDateField = raw?._fields?.header?.find(f =>
               /\d{2}[.:]\d{2}/.test(String(f.value || "")) || /\d{4}/.test(String(f.label || ""))
             )

@@ -257,10 +257,11 @@ function EmptyState({ onAdd }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Passes({ add }) {
-  const [passes, setPasses]             = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [showModal, setShowModal]       = useState(!!add)
-  const [selectedPass, setSelectedPass] = useState(null)
+  const [passes, setPasses]                 = useState([])
+  const [loading, setLoading]               = useState(true)
+  const [showModal, setShowModal]           = useState(!!add)
+  const [selectedPass, setSelectedPass]     = useState(null)
+  const [favLoadingId, setFavLoadingId]     = useState(null)
   const navigate = useNavigate()
   const token = localStorage.getItem("token")
 
@@ -293,6 +294,35 @@ export default function Passes({ add }) {
     } catch { }
   }
 
+  // Favorit toggeln – optimistisches UI-Update, dann Server-Request
+  const handleFavorite = async (pass, newValue) => {
+    if (favLoadingId) return
+    setFavLoadingId(pass.id)
+
+    // Optimistisch updaten
+    setPasses(prev => prev.map(p => p.id === pass.id ? { ...p, is_favorite: newValue } : p))
+    if (selectedPass?.id === pass.id) setSelectedPass(prev => ({ ...prev, is_favorite: newValue }))
+
+    try {
+      const res = await fetch(`/api/passes/${pass.id}/favorite`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ is_favorite: newValue }),
+      })
+      if (!res.ok) {
+        // Rollback bei Fehler
+        setPasses(prev => prev.map(p => p.id === pass.id ? { ...p, is_favorite: !newValue } : p))
+        if (selectedPass?.id === pass.id) setSelectedPass(prev => ({ ...prev, is_favorite: !newValue }))
+      }
+    } catch {
+      // Rollback
+      setPasses(prev => prev.map(p => p.id === pass.id ? { ...p, is_favorite: !newValue } : p))
+      if (selectedPass?.id === pass.id) setSelectedPass(prev => ({ ...prev, is_favorite: !newValue }))
+    } finally {
+      setFavLoadingId(null)
+    }
+  }
+
   const closeModal = () => { setShowModal(false); navigate("/passes", { replace: true }) }
   const openAdd    = () => { setShowModal(true);  navigate("/passes/add", { replace: true }) }
 
@@ -311,11 +341,32 @@ export default function Passes({ add }) {
 
   const getPassDate = (p) => p.departure_time || p.event_date || null
 
-  const upcoming = passes.filter(p =>
+  // Favoriten zuerst, dann nach Datum sortiert
+  const sortPasses = (list) =>
+    [...list].sort((a, b) => {
+      if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1
+      const da = getPassDate(a), db = getPassDate(b)
+      if (!da && !db) return 0
+      if (!da) return 1
+      if (!db) return -1
+      return new Date(db) - new Date(da)
+    })
+
+  const upcoming = sortPasses(passes.filter(p =>
     !isExpiredOrVoided(p) && (!getPassDate(p) || new Date(getPassDate(p)) >= new Date())
-  )
-  const past = passes.filter(p =>
+  ))
+  const past = sortPasses(passes.filter(p =>
     isExpiredOrVoided(p) || (getPassDate(p) && new Date(getPassDate(p)) < new Date())
+  ))
+
+  const renderCard = (p) => (
+    <PassGridCard
+      key={p.id}
+      pass={p}
+      onClick={() => setSelectedPass(p)}
+      onFavorite={handleFavorite}
+      favoriteLoading={favLoadingId === p.id}
+    />
   )
 
   return (
@@ -340,7 +391,7 @@ export default function Passes({ add }) {
           <section className="mb-8">
             {past.length > 0 && <p className="text-[11px] uppercase tracking-widest text-slate-600 font-semibold mb-3">Bevorstehend</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {upcoming.map(p => <PassGridCard key={p.id} pass={p} onClick={() => setSelectedPass(p)} />)}
+              {upcoming.map(renderCard)}
             </div>
           </section>
         )}
@@ -349,14 +400,20 @@ export default function Passes({ add }) {
           <section>
             <p className="text-[11px] uppercase tracking-widest text-slate-600 font-semibold mb-3">Abgelaufen & Vergangen</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {past.map(p => <PassGridCard key={p.id} pass={p} onClick={() => setSelectedPass(p)} />)}
+              {past.map(renderCard)}
             </div>
           </section>
         )}
       </div>
 
       {selectedPass && (
-        <PassDetailOverlay pass={selectedPass} onClose={() => setSelectedPass(null)} onDelete={handleDelete} />
+        <PassDetailOverlay
+          pass={selectedPass}
+          onClose={() => setSelectedPass(null)}
+          onDelete={handleDelete}
+          onFavorite={handleFavorite}
+          favoriteLoading={favLoadingId === selectedPass.id}
+        />
       )}
       {showModal && <AddPassModal onClose={closeModal} onSuccess={handleSuccess} />}
     </div>

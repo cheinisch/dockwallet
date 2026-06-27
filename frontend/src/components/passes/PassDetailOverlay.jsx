@@ -7,9 +7,11 @@ import { fmtDate, fmtTime, extractPassDetails, IconBack, IconDots, IconTrash, Ic
  * Oben rechts: ⋮-Button öffnet Sidebar/Bottom-Sheet mit Details + Signatur-Status.
  *
  * Props:
- *   pass     – Pass-Objekt aus der API
- *   onClose  – Schließt das Overlay
- *   onDelete – Löscht den Pass (id)
+ *   pass            – Pass-Objekt aus der API
+ *   onClose         – Schließt das Overlay
+ *   onDelete        – Löscht den Pass (id)
+ *   onFavorite      – Favorit toggeln (pass, newValue)
+ *   favoriteLoading – Boolean, ob Favorit gerade gespeichert wird
  */
 // ─── Boarding Pass Layout (weißes Ticket mit Perforation) ────────────────────
 function BoardingPassCard({ pass, isVoided }) {
@@ -254,10 +256,11 @@ function VoidedBanner({ pass }) {
 }
 
 // ─── Main Overlay ─────────────────────────────────────────────────────────────
-export default function PassDetailOverlay({ pass, onClose, onDelete }) {
+export default function PassDetailOverlay({ pass, onClose, onDelete, onFavorite, favoriteLoading }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { back, extra } = extractPassDetails(pass.raw_data)
   const isVoided = pass.is_voided || (pass.expiration_date && new Date(pass.expiration_date) < new Date())
+  const isFav = pass.is_favorite
 
   return (
     <div
@@ -276,6 +279,27 @@ export default function PassDetailOverlay({ pass, onClose, onDelete }) {
               <IconBack /><span>Zurück</span>
             </button>
             <div className="flex items-center gap-1">
+              {onFavorite && (
+                <button
+                  onClick={() => onFavorite(pass, !isFav)}
+                  disabled={!!favoriteLoading}
+                  aria-label={isFav ? "Favorit entfernen" : "Als Favorit markieren"}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors
+                    ${favoriteLoading ? "opacity-50 cursor-wait" : "hover:bg-slate-800"}`}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="w-4 h-4 transition-transform duration-150 active:scale-125"
+                    fill={isFav ? "#fbbf24" : "none"}
+                    stroke={isFav ? "#fbbf24" : "#94a3b8"}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </button>
+              )}
               <button onClick={() => setSidebarOpen(o => !o)}
                 className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
                   sidebarOpen ? "bg-sky-500/20 text-sky-400" : "text-slate-400 hover:text-slate-100 hover:bg-slate-800"

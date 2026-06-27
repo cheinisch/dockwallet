@@ -1,6 +1,6 @@
 import express from "express"
 import { requireAuth } from "../auth/middleware.js"
-import { parsePkpass, getPassesByUser, createPass, deletePass } from "./model.js"
+import { parsePkpass, getPassesByUser, createPass, deletePass, setFavorite } from "./model.js"
 
 const router = express.Router()
 
@@ -18,7 +18,7 @@ router.get("/", requireAuth, async (req, res) => {
 // .pkpass-Datei hochladen (base64 encoded)
 router.post("/upload", requireAuth, async (req, res) => {
   try {
-    const { file } = req.body // base64-String
+    const { file } = req.body
     if (!file) return res.status(400).json({ error: "Keine Datei übermittelt" })
 
     const buffer = Buffer.from(file, "base64")
@@ -32,13 +32,12 @@ router.post("/upload", requireAuth, async (req, res) => {
   }
 })
 
-// Pass per URL importieren (z.B. aus QR-Code gescannt)
+// Pass per URL importieren
 router.post("/import-url", requireAuth, async (req, res) => {
   try {
     const { url } = req.body
     if (!url) return res.status(400).json({ error: "Keine URL angegeben" })
 
-    // URL validieren
     let parsedUrl
     try {
       parsedUrl = new URL(url)
@@ -46,13 +45,11 @@ router.post("/import-url", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Ungültige URL" })
     }
 
-    // .pkpass herunterladen
     const fetchRes = await fetch(parsedUrl.toString())
     if (!fetchRes.ok) {
       return res.status(400).json({ error: "Datei konnte nicht heruntergeladen werden" })
     }
 
-    const contentType = fetchRes.headers.get("content-type") || ""
     const arrayBuffer = await fetchRes.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
@@ -66,13 +63,29 @@ router.post("/import-url", requireAuth, async (req, res) => {
   }
 })
 
-// Pass manuell anlegen (ohne Datei)
+// Pass manuell anlegen
 router.post("/", requireAuth, async (req, res) => {
   try {
     const pass = await createPass(req.user.id, req.body)
     res.status(201).json(pass)
   } catch (err) {
     console.error("POST /passes:", err)
+    res.status(500).json({ error: "Interner Fehler" })
+  }
+})
+
+// Favorit setzen / entfernen
+router.patch("/:id/favorite", requireAuth, async (req, res) => {
+  try {
+    const { is_favorite } = req.body
+    if (typeof is_favorite !== "boolean") {
+      return res.status(400).json({ error: "is_favorite muss ein Boolean sein" })
+    }
+    const updated = await setFavorite(req.user.id, req.params.id, is_favorite)
+    if (!updated) return res.status(404).json({ error: "Pass nicht gefunden" })
+    res.json({ success: true, is_favorite: updated.is_favorite })
+  } catch (err) {
+    console.error("PATCH /passes/:id/favorite:", err)
     res.status(500).json({ error: "Interner Fehler" })
   }
 })

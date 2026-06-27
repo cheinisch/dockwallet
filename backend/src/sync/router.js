@@ -7,6 +7,7 @@ import {
   getPassesByUser,
   createPass,
   deletePass,
+  setFavorite,
 } from "../passes/model.js"
 
 const router = express.Router()
@@ -77,9 +78,10 @@ router.get("/passes", requireAuth, async (req, res) => {
                 color_background, color_foreground, color_label, logo_text,
                 signature_valid, signature_reason,
                 is_voided, expiration_date, subtitle,
+                is_favorite,
                 raw_data, created_at, updated_at
          FROM passes WHERE user_id = $1 AND updated_at > $2
-         ORDER BY updated_at DESC`,
+         ORDER BY is_favorite DESC, updated_at DESC`,
         [req.user.id, since]
       )
       passes = result.rows
@@ -132,6 +134,22 @@ router.delete("/passes/:id", requireAuth, async (req, res) => {
     res.json({ success: true })
   } catch (err) {
     console.error("DELETE /sync/passes/:id:", err)
+    res.status(500).json({ error: "Interner Fehler" })
+  }
+})
+
+// Favorit setzen / entfernen (für App-Sync)
+router.patch("/passes/:id/favorite", requireAuth, async (req, res) => {
+  try {
+    const { is_favorite } = req.body
+    if (typeof is_favorite !== "boolean") {
+      return res.status(400).json({ error: "is_favorite muss ein Boolean sein" })
+    }
+    const updated = await setFavorite(req.user.id, req.params.id, is_favorite)
+    if (!updated) return res.status(404).json({ error: "Pass nicht gefunden" })
+    res.json({ success: true, is_favorite: updated.is_favorite })
+  } catch (err) {
+    console.error("PATCH /sync/passes/:id/favorite:", err)
     res.status(500).json({ error: "Interner Fehler" })
   }
 })

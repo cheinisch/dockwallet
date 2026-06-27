@@ -47,23 +47,17 @@ function verifySignature(zip) {
     const manifestData = manifestEntry.getData()
     const signatureData = signatureEntry.getData()
 
-    // PKCS#7 SignedData parsen (DER-Format)
-    // Wir prüfen ob die Signatur von einem Apple-Zertifikat stammt
-    // durch Analyse der ASN.1-Struktur
     const sig = signatureData
 
-    // Mindest-Check: muss ein gültiges DER PKCS#7 SEQUENCE sein
     if (sig.length < 4 || sig[0] !== 0x30) {
       return { valid: false, reason: "Ungültiges Signaturformat" }
     }
 
-    // Prüfen ob Apple OID (1.2.840.113549.1.7.2 = pkcs7-signedData) enthalten ist
     const appleOidMarker = Buffer.from([0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02])
     if (!sig.includes(appleOidMarker)) {
       return { valid: false, reason: "Kein Apple-PKCS#7-Format erkannt" }
     }
 
-    // Apple issuer string suchen
     const appleMarker = Buffer.from("Apple", "utf8")
     const hasAppleIssuer = sig.includes(appleMarker)
 
@@ -71,7 +65,6 @@ function verifySignature(zip) {
       return { valid: false, reason: "Kein Apple-Aussteller in der Signatur gefunden" }
     }
 
-    // Manifest-Hash-Prüfung: alle Dateien im Manifest müssen existieren
     const manifestJson = JSON.parse(manifestData.toString("utf8").replace(/\0/g, ""))
     for (const filename of Object.keys(manifestJson)) {
       if (!zip.getEntry(filename)) {
@@ -100,7 +93,6 @@ export function parsePkpass(buffer) {
   try {
     const zip = new AdmZip(buffer)
 
-    // Signatur prüfen (vor dem Parsen)
     const signatureResult = verifySignature(zip)
 
     const passEntry = zip.getEntry("pass.json")
@@ -136,18 +128,14 @@ export function parsePkpass(buffer) {
       return null
     }
 
-    // Primäres Anzeigefeld – erstes primaryField mit nicht-leerem Wert
     const primaryValue = passBody.primaryFields
       ?.map(f => String(f.value).trim())
       .find(v => v.length > 0) || null
 
-    // Primärfeld-Label (z.B. beim Kino = Kino-Name, bei Autostadt = "EVENT")
     const isBoardingPass = passType === "boardingPass"
 
     const primaryFieldLabel = passBody.primaryFields?.[0]?.label?.trim() || null
 
-    // Subtitle für Kartenanzeige:
-    // Priorität: primaryField-Label (wenn es kein generisches Wort ist) → erstes secondaryField
     const genericLabels = ["event", "ticket", "tickettyp", "name", "pass"]
     const usePrimaryLabelAsSubtitle = primaryFieldLabel &&
       !genericLabels.includes(primaryFieldLabel.toLowerCase()) &&
@@ -168,13 +156,10 @@ export function parsePkpass(buffer) {
 
     const barcodes = p.barcodes || (p.barcode ? [p.barcode] : [])
     const barcodeValue = barcodes[0]?.message || null
-    // Datum für Nicht-Boarding-Pässe:
-    // Suche in headerFields, auxiliaryFields, relevantDate, expirationDate
+
     let eventDate = null
     if (!isBoardingPass) {
-      // 1. relevantDate aus pass.json root
       if (p.relevantDate) eventDate = parseDate(p.relevantDate)
-      // 2. Datumsfelder in allen Feldern (ISO-Format oder erkennbares Datum)
       if (!eventDate) {
         const dateField = allFields.find(f => {
           const v = String(f.value || "")
@@ -182,15 +167,12 @@ export function parsePkpass(buffer) {
         })
         if (dateField) eventDate = parseDate(String(dateField.value))
       }
-      // 3. expirationDate als letzter Fallback
       if (!eventDate && p.expirationDate) eventDate = parseDate(p.expirationDate)
     }
 
-    // Ablauf/voided Status für Frontend
     const isVoided = p.voided === true
     const expirationDate = p.expirationDate ? parseDate(p.expirationDate) : null
 
-    // Bilder aus pkpass extrahieren
     const logoEntry       = zip.getEntry("logo@2x.png")       || zip.getEntry("logo.png")
     const stripEntry      = zip.getEntry("strip@2x.png")      || zip.getEntry("strip.png")
     const backgroundEntry = zip.getEntry("background@2x.png") || zip.getEntry("background.png")
@@ -223,7 +205,6 @@ export function parsePkpass(buffer) {
       color_background:  toHex(p.backgroundColor) || null,
       color_foreground:  toHex(p.foregroundColor) || null,
       color_label:       toHex(p.labelColor)      || null,
-      // Alle strukturierten Felder + Bilder in raw_data für Frontend
       raw_data: {
         ...p,
         _logo:       toB64(logoEntry),
@@ -258,9 +239,10 @@ export async function getPassesByUser(userId) {
             color_background, color_foreground, color_label, logo_text,
             signature_valid, signature_reason,
             is_voided, expiration_date, subtitle,
+            is_favorite,
             raw_data, created_at
      FROM passes WHERE user_id = $1
-     ORDER BY COALESCE(departure_time, event_date) DESC NULLS LAST, created_at DESC`,
+     ORDER BY is_favorite DESC, COALESCE(departure_time, event_date) DESC NULLS LAST, created_at DESC`,
     [userId]
   )
   return result.rows
@@ -275,8 +257,8 @@ export async function createPass(userId, data) {
         color_background, color_foreground, color_label, logo_text,
         signature_valid, signature_reason,
         is_voided, expiration_date, subtitle,
-        raw_data)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        raw_data, is_favorite)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
      RETURNING *`,
     [
       userId, data.airline, data.flight_number, data.origin, data.destination,
@@ -290,6 +272,7 @@ export async function createPass(userId, data) {
       data.expiration_date || null,
       data.subtitle || null,
       data.raw_data ? JSON.stringify(data.raw_data) : null,
+      data.is_favorite ?? false,
     ]
   )
   return result.rows[0]
@@ -301,4 +284,12 @@ export async function deletePass(userId, passId) {
     [passId, userId]
   )
   return result.rowCount > 0
+}
+
+export async function setFavorite(userId, passId, isFavorite) {
+  const result = await query(
+    `UPDATE passes SET is_favorite = $1 WHERE id = $2 AND user_id = $3 RETURNING id, is_favorite`,
+    [isFavorite, passId, userId]
+  )
+  return result.rows[0] || null
 }
