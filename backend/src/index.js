@@ -8,6 +8,7 @@ import { initDb } from "./db.js"
 import authRouter from "./auth/router.js"
 import adminRouter from "./admin/router.js"
 import passesRouter from "./passes/router.js"
+import syncRouter from "./sync/router.js"
 
 dotenv.config()
 
@@ -25,6 +26,7 @@ app.use(express.json({ limit: "10mb" }))
 app.use("/api/auth",   authRouter)
 app.use("/api/admin",  adminRouter)
 app.use("/api/passes", passesRouter)
+app.use("/api/sync",   syncRouter)
 
 // Health + Version
 app.get("/api/health", (req, res) => {
@@ -33,10 +35,10 @@ app.get("/api/health", (req, res) => {
 
 app.get("/api/version", (req, res) => {
   res.json({
-    version:   BACKEND_VERSION,
-    name:      pkg.name,
+    version:     BACKEND_VERSION,
+    name:        pkg.name,
     nodeVersion: process.version,
-    uptime:    Math.floor(process.uptime()),
+    uptime:      Math.floor(process.uptime()),
   })
 })
 
@@ -50,7 +52,6 @@ initDb()
     console.error("Startup fehlgeschlagen:", err)
     process.exit(1)
   })
-
 
 // Docker Hub Version-Check (proxied um CORS zu umgehen)
 app.get("/api/dockerhub/latest", async (req, res) => {
